@@ -21,7 +21,7 @@ from app.services.mcp_analytics.ga_quality_service import GA4QualityService
 from app.services.mcp_analytics.ga_metadata_service import GA4MetadataService
 from app.services.mcp_analytics.ga_risk_service import GA4RiskService
 from app.services.mcp_analytics.ga_traffic_ia_service import GATrafficIAService
-from app.services.mcp_analytics.brandlight_service import BrandlightService
+# from app.services.mcp_analytics.brandlight_service import BrandlightService
 from app.services.mcp_analytics.peec_service import PeecService
 from app.services.mcp_analytics.chat_service import ChatService
 from app.services.mcp_analytics.query_history import QueryHistoryService
@@ -128,6 +128,18 @@ def get_analytics_service(session_id: Optional[str] = None, connection_id: Optio
     # Try platform connection first
     if connection_id and user_email:
         target_user = user_email.lower().strip()
+        
+        # Immediate fallback for presentation/mock connections without Firestore
+        if connection_id == "peec-temp":
+            return PeecService({"api_key": "peec-temp"})
+        elif connection_id == "adobe-temp":
+            return AdobeAnalyticsService({
+                "client_id": "adobe-temp",
+                "client_secret": "adobe-temp",
+                "org_id": "adobe-temp",
+                "company_id": "adobe-temp"
+            })
+
         tm = TokenManager()
         connection = tm.get_connection(connection_id)
         if not connection:
@@ -151,8 +163,8 @@ def get_analytics_service(session_id: Optional[str] = None, connection_id: Optio
             return GAService(credentials, inspector=get_inspector_service())
         elif platform == "ADOBE_ANALYTICS" or platform == "ADOBE":
             return AdobeAnalyticsService(service_creds)
-        elif platform == "BRANDLIGHT":
-            return BrandlightService(service_creds)
+        # elif platform == "BRANDLIGHT":
+        #    return BrandlightService(service_creds)
         elif platform == "PEEC":
             return PeecService(service_creds)
         else:
@@ -177,6 +189,11 @@ def get_analytics_service(session_id: Optional[str] = None, connection_id: Optio
         if not adobe_creds:
             raise HTTPException(status_code=401, detail="Adobe credentials not found in session")
         return AdobeAnalyticsService(adobe_creds)
+    elif provider == "peec":
+        peec_creds = session.get("peec_credentials") or session.get("credentials")
+        if not peec_creds:
+            raise HTTPException(status_code=401, detail="Peec credentials not found in session")
+        return PeecService(peec_creds)
     
     raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
 
@@ -187,81 +204,19 @@ def get_inspector_service():
 
 @router.get("/oauth/login")
 async def oauth_login(request: Request, provider: str = "google"):
-    """Inicia el flujo de autenticación OAuth."""
-    if provider == "google":
-        scopes = [
-            "https://www.googleapis.com/auth/analytics.readonly",
-            "https://www.googleapis.com/auth/userinfo.email",
-            "openid"
-        ]
-        from app.services.auth_utils import GoogleOAuth2Helper, OAuthStateManager
-        state = str(uuid.uuid4())
-        code_verifier, code_challenge = GoogleOAuth2Helper.generate_pkce()
-        
-        # Save state in Firestore
-        osm = OAuthStateManager()
-        osm.save_state(state, {"code_verifier": code_verifier, "provider": "google"})
-        
-        redirect_uri = get_backend_callback_url(request)
-        auth_url = GoogleOAuth2Helper.get_auth_url(
-            settings.GOOGLE_CLIENT_ID,
-            redirect_uri,
-            scopes,
-            state,
-            code_challenge
-        )
-        return RedirectResponse(auth_url)
-    
-    raise HTTPException(status_code=400, detail="Unsupported provider")
+    """Inicia el flujo de autenticación OAuth (MOCKED FOR PRESENTATION)."""
+    # Para presentación, redirigimos directamente al dashboard con parámetros mock
+    redirect_uri = "http://localhost:3000?connection_id=mock-ga4&session_id=presentacion-llyc"
+    return RedirectResponse(redirect_uri)
 
 @router.post("/oauth/callback")
 async def oauth_callback(request: Request, data: Dict[str, str]):
-    """Callback de OAuth para procesar el código de autorización."""
-    code = data.get("code")
-    state = data.get("state")
-    
-    if not code or not state:
-        raise HTTPException(status_code=400, detail="Missing code or state")
-        
-    from app.services.auth_utils import GoogleOAuth2Helper, OAuthStateManager
-    osm = OAuthStateManager()
-    state_data = osm.get_state(state)
-    
-    if not state_data:
-        raise HTTPException(status_code=400, detail="Invalid or expired state")
-        
-    code_verifier = state_data.get("code_verifier")
-    redirect_uri = get_backend_callback_url(request)
-    
-    try:
-        tokens = GoogleOAuth2Helper.get_tokens(
-            settings.GOOGLE_CLIENT_ID,
-            settings.GOOGLE_CLIENT_SECRET,
-            code,
-            redirect_uri,
-            code_verifier
-        )
-        
-        # Create session
-        from google.oauth2.credentials import Credentials
-        creds = Credentials(
-            token=tokens.get("access_token"),
-            refresh_token=tokens.get("refresh_token"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.GOOGLE_CLIENT_ID,
-            client_secret=settings.GOOGLE_CLIENT_SECRET,
-            scopes=tokens.get("scopes", ["https://www.googleapis.com/auth/analytics.readonly"])
-        )
-        
-        session_id = session_service.create_session(
-            provider="google",
-            credentials=json.loads(creds.to_json())
-        )
-        
-        return {"session_id": session_id, "status": "ok"}
-    except Exception as e:
-        logger.error(f"OAuth callback error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Callback de OAuth (MOCKED FOR PRESENTATION)."""
+    return {
+        "status": "success",
+        "session_id": "presentacion-llyc",
+        "connection_id": "mock-ga4"
+    }
 
 # --- Core MCP Endpoints ---
 
