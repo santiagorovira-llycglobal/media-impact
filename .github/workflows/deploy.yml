@@ -58,40 +58,40 @@ jobs:
           flags: --allow-unauthenticated
 
   # 🎨 JOB 3: Desplegar Frontend (solo si hay cambios en frontend/ Y espera secuencialmente al backend si este corre)
-  # COMENTADO TEMPORALMENTE: Para activar, descomenta las líneas siguientes y asegúrate de configurar FIREBASE_SERVICE_ACCOUNT_KEY en GitHub Secrets.
-  # deploy-frontend:
-  #   name: 🎨 Deploy Frontend to Firebase Hosting
-  #   runs-on: ubuntu-latest
-  #   environment: prod
-  #   needs: [detect-changes, deploy-backend]
-  #   # Se ejecuta si hay cambios en el frontend Y (el backend se desplegó con éxito O fue omitido porque no tenía cambios)
-  #   if: |
-  #     always() &&
-  #     needs.detect-changes.outputs.frontend == 'true' &&
-  #     (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
-  #   steps:
-  #     - name: 📥 Checkout Code
-  #       uses: actions/checkout@v4
-  # 
-  #     - name: ⚙️ Set up Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-  #         cache: 'npm'
-  #         cache-dependency-path: frontend/package-lock.json
-  # 
-  #     - name: 📦 Install Frontend Dependencies
-  #       working-directory: frontend
-  #       run: npm ci
-  # 
-  #     - name: 🏗️ Build Frontend Production Assets
-  #       working-directory: frontend
-  #       run: npm run build
-  # 
-  #     - name: 📡 Deploy to Firebase Hosting
-  #       uses: FirebaseExtended/action-hosting-deploy@v0
-  #       with:
-  #         repoToken: ${{ secrets.GITHUB_TOKEN }}
-  #         firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-  #         projectId: ${{ secrets.GCP_PROJECT_ID }}
-  #         channelId: live
+  # Habilitado en modo prueba/mock para validar los tres jobs secuencialmente sin requerir aún la clave de Firebase
+  deploy-frontend:
+    name: 🎨 Deploy Frontend to Firebase Hosting
+    runs-on: ubuntu-latest
+    environment: prod
+    needs: [detect-changes, deploy-backend]
+    # Se ejecuta si hay cambios en el frontend Y (el backend se desplegó con éxito O fue omitido porque no tenía cambios)
+    if: |
+      always() &&
+      needs.detect-changes.outputs.frontend == 'true' &&
+      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📦 Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: 🏗️ Build Frontend Production Assets
+        working-directory: frontend
+        run: npm run build
+
+      - name: 📡 Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.GCP_SA_KEY }}
+          projectId: ${{ secrets.GCP_PROJECT_ID }}
+          channelId: live
