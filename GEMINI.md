@@ -36,6 +36,8 @@ Formato: `<tipo>(<ámbito opcional>): <descripción corta en minúsculas y prese
 
 ## 🚨 3. Protocolo de Git y Pre-Push Mandatorio
 
+**REGLA DE ORO DE CONTROL DE VERSIONES**: Está estrictamente prohibido realizar commits locales o pushes remotos de forma proactiva. **NUNCA se iniciará la fase de commit o push hasta que el usuario lo solicite de manera explícita.**
+
 Queda estrictamente prohibido realizar `git add .` o `git add -A`. Todo archivo debe ser agregado de manera individual y selectiva (`git add <archivo_específico>`). 
 Bajo ninguna circunstancia se realizará un `git push` sin autorización previa y explícita del usuario.
 

@@ -1053,3 +1053,216 @@ async def upload_tenant_logo_admin(
     except Exception as e:
         logger.error(f"Error al subir logotipo de tenant en admin: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class ETLTriggerRequest(BaseModel):
+    tenant_id: str = Field(..., description="ID del tenant a sincronizar (ej: 'sanitas')")
+    historical_backfill: bool = Field(default=False, description="Si es True, realiza un backfill histórico (ej. últimos 90 días). Si es False, es un incremento de 2 días.")
+
+@router.post("/admin/etl/trigger", response_model=Dict[str, Any])
+async def trigger_tenant_etl_admin(
+    req: ETLTriggerRequest,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Desencadena de manera manual o programada (Cloud Scheduler) la ingesta ETL de un cliente.
+    Descarga el histórico, limpia duplicados y lo inserta de manera limpia en BigQuery.
+    """
+    try:
+        tenant_id = req.tenant_id.lower().strip()
+        
+        # 1. Recuperar todas las credenciales activas del tenant desde Secret Manager
+        from app.services.mcp_analytics.secret_manager_service import SecretManagerService
+        sms = SecretManagerService()
+        
+        credentials = {}
+        secret_types = ["brandlight-key", "peec-key", "ga4-creds", "adobe-creds"]
+        for st in secret_types:
+            val = sms.get_tenant_secret(tenant_id, st)
+            if val:
+                credentials[st] = val
+                
+        # 2. Definir ventana de tiempo (backfill histórico de 90 días vs incremento diario de 2 días)
+        if req.historical_backfill:
+            date_from = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+        else:
+            date_from = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+            
+        date_to = datetime.utcnow().strftime("%Y-%m-%d")
+        
+        # 3. Lanzar la ETL de forma asíncrona
+        from app.services.mcp_analytics.etl_service import MCPETLService
+        etl = MCPETLService(tenant_id=tenant_id)
+        
+        # Ejecutar sincronización
+        sync_result = await etl.run_full_sync(
+            credentials=credentials,
+            date_from=date_from,
+            date_to=date_to
+        )
+        
+        return {
+            "status": "success",
+            "message": f"ETL completada para el tenant '{tenant_id}'.",
+            "sync_details": sync_result
+        }
+        
+    except Exception as e:
+        logger.error(f"Error al desencadenar ETL en admin: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/admin/etl/history", response_model=List[Dict[str, Any]])
+async def list_etl_history_admin(user_email: str = Depends(get_current_admin)):
+    """
+    Recupera el historial de ejecuciones de ETL para todos los inquilinos desde Firestore (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        if not tm.db:
+            return []
+            
+        runs_ref = tm.db.collection("etl_runs")
+        # Listar últimas 50 corridas ordenadas por fecha descendente
+        docs = runs_ref.order_by("timestamp", direction="DESCENDING").limit(50).stream()
+        runs = []
+        for doc in docs:
+            runs.append(doc.to_dict())
+            
+        return runs
+    except Exception as e:
+        logger.error(f"Error al listar historial de ETL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/admin/etl/alerts", response_model=List[Dict[str, Any]])
+async def list_etl_alerts_admin(user_email: str = Depends(get_current_admin)):
+    """
+    Lista las alertas activas de fallos en el proceso ETL desde Firestore (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        if not tm.db:
+            return []
+            
+        alerts_ref = tm.db.collection("etl_alerts")
+        # Filtrar únicamente alertas activas
+        docs = alerts_ref.where("status", "==", "active").order_by("timestamp", direction="DESCENDING").stream()
+        alerts = []
+        for doc in docs:
+            alerts.append(doc.to_dict())
+            
+        return alerts
+    except Exception as e:
+        logger.error(f"Error al listar alertas de ETL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/admin/etl/alerts/{alert_id}/dismiss", response_model=Dict[str, Any])
+async def dismiss_etl_alert_admin(
+    alert_id: str,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Marca una alerta de ETL como resuelta/descartada en Firestore (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        if tm.db:
+            alert_ref = tm.db.collection("etl_alerts").document(alert_id)
+            alert_ref.update({
+                "status": "dismissed",
+                "resolved_by": user_email,
+                "resolved_at": datetime.utcnow().isoformat()
+            })
+            logger.info(f"Alerta '{alert_id}' marcada como resuelta por {user_email}")
+            return {"status": "success", "message": f"Alerta '{alert_id}' descartada de forma exitosa."}
+        else:
+            raise Exception("Firestore no está disponible.")
+    except Exception as e:
+        logger.error(f"Error al descartar alerta de ETL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/admin/tenants/{tenant_id}/data-gaps", response_model=Dict[str, Any])
+async def detect_tenant_data_gaps_admin(
+    tenant_id: str,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Detecta huecos (fechas faltantes sin datos) en las tablas de BigQuery para un tenant (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.mcp_analytics.bigquery_service import BigQueryService
+        bqs = BigQueryService()
+        
+        tenant_id_clean = tenant_id.lower().strip()
+        gaps_result = bqs.get_data_gaps(tenant_id=tenant_id_clean)
+        
+        return gaps_result
+    except Exception as e:
+        logger.error(f"Error al detectar huecos para {tenant_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class PatchGapsRequest(BaseModel):
+    gaps: List[Dict[str, str]] = Field(..., description="Lista de rangos de fechas a rellenar, ej: [{'start': '2026-06-01', 'end': '2026-06-05'}]")
+
+@router.post("/admin/tenants/{tenant_id}/patch", response_model=Dict[str, Any])
+async def patch_tenant_data_gaps_admin(
+    tenant_id: str,
+    req: PatchGapsRequest,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Lanza el Patcher de datos para rellenar (sincronizar) de forma masiva los huecos detectados
+    en BigQuery de forma limpia y sin duplicados (Solo Superadmin LLYC).
+    """
+    try:
+        tenant_id_clean = tenant_id.lower().strip()
+        
+        # 1. Recuperar todas las credenciales activas del tenant desde Secret Manager
+        from app.services.mcp_analytics.secret_manager_service import SecretManagerService
+        sms = SecretManagerService()
+        
+        credentials = {}
+        secret_types = ["brandlight-key", "peec-key", "ga4-creds", "adobe-creds"]
+        for st in secret_types:
+            val = sms.get_tenant_secret(tenant_id_clean, st)
+            if val:
+                credentials[st] = val
+                
+        # 2. Instanciar el coordinador de ETL
+        from app.services.mcp_analytics.etl_service import MCPETLService
+        etl = MCPETLService(tenant_id=tenant_id_clean)
+        
+        patch_results = []
+        
+        # 3. Iterar por cada hueco/rango de fechas solicitado y sincronizarlo de forma limpia (idempotente)
+        for gap in req.gaps:
+            start_date = gap.get("start")
+            end_date = gap.get("end")
+            
+            if not start_date or not end_date:
+                continue
+                
+            logger.info(f"🛠️ Lanzando Patcher de datos para '{tenant_id_clean}' en el periodo: {start_date} a {end_date}...")
+            
+            sync_res = await etl.run_full_sync(
+                credentials=credentials,
+                date_from=start_date,
+                date_to=end_date
+            )
+            
+            patch_results.append({
+                "range": f"{start_date} a {end_date}",
+                "status": sync_res.get("status"),
+                "records_processed": sync_res.get("records_processed", 0)
+            })
+            
+        return {
+            "status": "success",
+            "message": f"Proceso de parchado (Patching) finalizado con éxito para '{tenant_id_clean}'.",
+            "patched_ranges": patch_results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error al parchar datos del tenant {tenant_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

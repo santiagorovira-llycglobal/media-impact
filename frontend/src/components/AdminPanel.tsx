@@ -1,6 +1,6 @@
 // frontend/src/components/AdminPanel.tsx
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, Edit2, Key, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, LogOut, User } from 'lucide-react';
+import { ShieldCheck, Plus, Edit2, Key, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, LogOut, User, Activity, AlertTriangle, Check, Wrench, CalendarRange, Database } from 'lucide-react';
 import { auth } from '../firebase';
 
 interface TenantConfig {
@@ -35,6 +35,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [showSecretModal, setShowSecretModal] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [adminEmail] = useState(localStorage.getItem('admin_user_email') || 'consultor@llyc.global');
+
+  // Estados de Auditoría y Patcher
+  const [auditTenantId, setAuditTenantId] = useState<string | null>(null);
+  const [auditData, setAuditData] = useState<{ first_date: string | null; gaps: any[]; gap_count: number } | null>(null);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [patching, setPatching] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+
+  const fetchDataGaps = async (tenantId: string) => {
+    try {
+      setLoadingAudit(true);
+      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants/${tenantId}/data-gaps`);
+      if (res.ok) {
+        const data = await res.json();
+        setAuditData(data);
+      } else {
+        throw new Error("No se pudieron detectar los huecos de BigQuery");
+      }
+    } catch (err: any) {
+      alert("Error al auditar huecos: " + err.message);
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  const handleRunPatcher = async () => {
+    if (!auditTenantId || !auditData || auditData.gaps.length === 0) return;
+    
+    try {
+      setPatching(true);
+      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants/${auditTenantId}/patch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gaps: auditData.gaps })
+      });
+      
+      const result = await res.json();
+      if (res.ok) {
+        alert("¡Proceso de parchado completado con éxito! Se rellenaron los huecos en BigQuery.");
+        fetchDataGaps(auditTenantId);
+      } else {
+        throw new Error(result.detail || "Error al ejecutar el parchado");
+      }
+    } catch (err: any) {
+      alert("Fallo de parchado: " + err.message);
+    } finally {
+      setPatching(false);
+    }
+  };
+
+  const openAuditModal = (tenantId: string) => {
+    setAuditTenantId(tenantId);
+    setAuditData(null);
+    setShowAuditModal(true);
+    fetchDataGaps(tenantId);
+  };
 
   const handleLogout = async () => {
     try {
@@ -105,6 +161,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   useEffect(() => {
     fetchTenants();
   }, []);
+
+  const [activeTab, setActiveTab] = useState<'tenants' | 'etl'>('tenants');
+  const [etlHistory, setEtlHistory] = useState<any[]>([]);
+  const [etlAlerts, setEtlAlerts] = useState<any[]>([]);
+  const [loadingEtl, setLoadingEtl] = useState(false);
+
+  const fetchEtlData = async () => {
+    try {
+      setLoadingEtl(true);
+      
+      // 1. Fetch History
+      const resHistory = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/etl/history`);
+      const dataHistory = resHistory.ok ? await resHistory.json() : [];
+      setEtlHistory(dataHistory);
+      
+      // 2. Fetch Active Alerts
+      const resAlerts = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/etl/alerts`);
+      const dataAlerts = resAlerts.ok ? await resAlerts.json() : [];
+      setEtlAlerts(dataAlerts);
+      
+    } catch (err) {
+      console.error("Error fetching ETL metrics:", err);
+    } finally {
+      setLoadingEtl(false);
+    }
+  };
+
+  const handleDismissAlert = async (alertId: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/etl/alerts/${alertId}/dismiss`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        // Remover localmente de la lista con un fade-out limpio
+        setEtlAlerts(prev => prev.filter(a => a.alert_id !== alertId));
+        setMessage({ type: 'success', text: "Alerta descartada con éxito." });
+      } else {
+        throw new Error("No se pudo descartar la alerta en Firestore");
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'etl') {
+      fetchEtlData();
+    }
+  }, [activeTab]);
 
   const handleSaveTenant = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,78 +374,216 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           </div>
         )}
 
-        {/* LISTADO DE CLIENTES */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-white/10 bg-white/[0.02]">
-            <h2 className="text-xs font-black uppercase tracking-widest text-mid">Clientes Activos ({tenants.length})</h2>
-          </div>
-
-          {loading ? (
-            <div className="p-12 text-center text-mid flex flex-col items-center gap-3">
-              <RefreshCw className="w-8 h-8 animate-spin text-red" />
-              <span className="text-xs font-bold uppercase tracking-widest">Cargando base de datos de inquilinos...</span>
-            </div>
-          ) : tenants.length === 0 ? (
-            <div className="p-12 text-center text-mid text-xs">
-              No hay clientes creados todavía en Firestore. Pulsa "Crear Nuevo Cliente" para comenzar.
-            </div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {tenants.map((t) => (
-                <div key={t.tenant_id} className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-white/[0.01] transition-colors">
-                  {/* Branding e info del cliente */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center p-2 border border-white/5 overflow-hidden">
-                      {t.logo_url ? (
-                        <img src={t.logo_url} alt={t.tenant_name} className="max-h-full object-contain" />
-                      ) : (
-                        <span className="text-xs font-black text-white/50 uppercase">{t.tenant_id.slice(0, 2)}</span>
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-black text-sm">{t.tenant_name}</h3>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-white/10 text-white/70 uppercase tracking-wider">
-                          ID: {t.tenant_id}
-                        </span>
-                      </div>
-                      <p className="text-xs text-mid mt-0.5">{t.support_email}</p>
-                      
-                      {/* Visualización de colores */}
-                      <div className="flex items-center gap-2 mt-2">
-                        <div className="flex items-center gap-1">
-                          <div className="w-3.5 h-3.5 rounded-full border border-white/10" style={{ backgroundColor: t.primary_color }}></div>
-                          <span className="text-[9px] font-mono text-mid uppercase">{t.primary_color}</span>
-                        </div>
-                        <div className="h-2 w-[1px] bg-white/10"></div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-3.5 h-3.5 rounded-full border border-white/10" style={{ backgroundColor: t.secondary_color }}></div>
-                          <span className="text-[9px] font-mono text-mid uppercase">{t.secondary_color}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Acciones */}
-                  <div className="flex items-center gap-2 self-end md:self-auto">
-                    <button
-                      onClick={() => openSecretModal(t.tenant_id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
-                    >
-                      <Key className="w-3.5 h-3.5" /> Claves API (GCP)
-                    </button>
-                    <button
-                      onClick={() => openEditModal(t)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" /> Editar Marca
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* TABS SELECTOR */}
+        <div className="flex border-b border-white/10 gap-6">
+          <button
+            onClick={() => setActiveTab('tenants')}
+            className={`pb-4 text-xs font-black uppercase tracking-widest border-b-2 transition-all ${
+              activeTab === 'tenants' 
+                ? 'border-red text-red' 
+                : 'border-transparent text-mid hover:text-white'
+            }`}
+          >
+            📂 Gestión de Clientes
+          </button>
+          <button
+            onClick={() => setActiveTab('etl')}
+            className={`pb-4 text-xs font-black uppercase tracking-widest border-b-2 transition-all ${
+              activeTab === 'etl' 
+                ? 'border-red text-red font-black' 
+                : 'border-transparent text-mid hover:text-white'
+            }`}
+          >
+            ❤️ Monitor de Salud ETL
+          </button>
         </div>
+
+        {activeTab === 'tenants' ? (
+          /* TAB 1: LISTADO DE CLIENTES */
+          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+            <div className="p-5 border-b border-white/10 bg-white/[0.02]">
+              <h2 className="text-xs font-black uppercase tracking-widest text-mid">Clientes Activos ({tenants.length})</h2>
+            </div>
+
+            {loading ? (
+              <div className="p-12 text-center text-mid flex flex-col items-center gap-3">
+                <RefreshCw className="w-8 h-8 animate-spin text-red" />
+                <span className="text-xs font-bold uppercase tracking-widest">Cargando base de datos de inquilinos...</span>
+              </div>
+            ) : tenants.length === 0 ? (
+              <div className="p-12 text-center text-mid text-xs">
+                No hay clientes creados todavía en Firestore. Pulsa "Crear Nuevo Cliente" para comenzar.
+              </div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {tenants.map((t) => (
+                  <div key={t.tenant_id} className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-white/[0.01] transition-colors">
+                    {/* Branding e info del cliente */}
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center p-2 border border-white/5 overflow-hidden">
+                        {t.logo_url ? (
+                          <img src={t.logo_url} alt={t.tenant_name} className="max-h-full object-contain" />
+                        ) : (
+                          <span className="text-xs font-black text-white/50 uppercase">{t.tenant_id.slice(0, 2)}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-black text-sm">{t.tenant_name}</h3>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-white/10 text-white/70 uppercase tracking-wider">
+                            ID: {t.tenant_id}
+                          </span>
+                        </div>
+                        <p className="text-xs text-mid mt-0.5">{t.support_email}</p>
+                        
+                        {/* Visualización de colores */}
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-1">
+                            <div className="w-3.5 h-3.5 rounded-full border border-white/10" style={{ backgroundColor: t.primary_color }}></div>
+                            <span className="text-[9px] font-mono text-mid uppercase">{t.primary_color}</span>
+                          </div>
+                          <div className="h-2 w-[1px] bg-white/10"></div>
+                          <div className="flex items-center gap-1">
+                            <div className="w-3.5 h-3.5 rounded-full border border-white/10" style={{ backgroundColor: t.secondary_color }}></div>
+                            <span className="text-[9px] font-mono text-mid uppercase">{t.secondary_color}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Acciones */}
+                    <div className="flex items-center gap-2 self-end md:self-auto">
+                      <button
+                        onClick={() => openAuditModal(t.tenant_id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 border border-teal-500/20 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                      >
+                        <Wrench className="w-3.5 h-3.5" /> Auditoría / Patcher
+                      </button>
+                      <button
+                        onClick={() => openSecretModal(t.tenant_id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                      >
+                        <Key className="w-3.5 h-3.5" /> Claves API (GCP)
+                      </button>
+                      <button
+                        onClick={() => openEditModal(t)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" /> Editar Marca
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* TAB 2: MONITOR DE SALUD ETL (NUEVO) */
+          <div className="space-y-6">
+            {/* ALERTAS DE SALUD MAESTRAS (CON ACCIÓN DISMISS) */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-white/10 bg-white/[0.02] flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red" />
+                <h2 className="text-xs font-black uppercase tracking-widest text-white">Alertas Operacionales Activas ({etlAlerts.length})</h2>
+              </div>
+              
+              {etlAlerts.length === 0 ? (
+                <div className="p-12 text-center text-mid text-xs flex flex-col items-center gap-2">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                  <span>¡Excelente! No hay alertas de salud activas en el ecosistema ETL.</span>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {etlAlerts.map(a => (
+                    <div key={a.alert_id} className="p-5 flex items-center justify-between gap-4 hover:bg-white/[0.01] transition-all">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-red shrink-0 mt-0.5" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-xs uppercase tracking-wider text-white">Inquilino: {a.tenant_id.toUpperCase()}</span>
+                            <span className="text-[9px] px-1.5 py-0.5 bg-red-500/10 text-red-400 font-bold uppercase rounded">{a.provider}</span>
+                          </div>
+                          <p className="text-xs text-mid mt-1 font-semibold">{a.error_message}</p>
+                          <span className="text-[10px] text-mid/60 mt-1 block">Ocurrido en: {new Date(a.timestamp).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDismissAlert(a.alert_id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Atendido / Borrar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* HISTORIAL DE LOGS DE INGESTA DIARIA */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-teal" />
+                  <h2 className="text-xs font-black uppercase tracking-widest text-white">Historial de Ingesta Diaria</h2>
+                </div>
+                <button 
+                  onClick={fetchEtlData}
+                  className="text-[10px] font-bold uppercase text-mid hover:text-white transition-all"
+                >
+                  Sincronizar Monitor
+                </button>
+              </div>
+
+              {loadingEtl ? (
+                <div className="p-12 text-center text-mid text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-red" />
+                  <span>Recuperando log de operaciones...</span>
+                </div>
+              ) : etlHistory.length === 0 ? (
+                <div className="p-12 text-center text-mid text-xs">
+                  No hay registros de ejecución de ETL todavía en Firestore.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/10 bg-white/[0.01] text-mid uppercase tracking-wider font-bold text-[10px]">
+                        <th className="p-4">Tenant</th>
+                        <th className="p-4">Fecha Sincronización</th>
+                        <th className="p-4">Estado</th>
+                        <th className="p-4 text-center">Registros Traídos (BQ)</th>
+                        <th className="p-4">Detalles</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {etlHistory.map(h => (
+                        <tr key={h.run_id} className="hover:bg-white/[0.01] transition-colors">
+                          <td className="p-4 font-black uppercase text-white">{h.tenant_id}</td>
+                          <td className="p-4 text-mid font-semibold">{new Date(h.timestamp).toLocaleString()}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                              h.status === "success" 
+                                ? 'bg-emerald-500/10 text-emerald-400' 
+                                : h.status === "partial_success"
+                                ? 'bg-amber-500/10 text-amber-400'
+                                : 'bg-red-500/10 text-red-400'
+                            }`}>
+                              {h.status}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center font-bold text-white text-sm">{h.records_processed ?? 0}</td>
+                          <td className="p-4 text-mid text-[11px] font-medium max-w-[200px] truncate">
+                            {JSON.stringify(h.results_summary)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* MODAL DE CREAR / EDITAR CLIENTE */}
@@ -555,6 +798,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE AUDITORÍA Y PATCHER DE BIGQUERY */}
+      {showAuditModal && auditTenantId && (
+        <div className="fixed inset-0 bg-navy/80 backdrop-blur-sm flex items-center justify-center p-5 z-[1000]">
+          <div className="bg-navy-light/20 border border-white/10 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-teal-400" />
+                <h3 className="font-black text-sm uppercase tracking-widest text-teal-400">
+                  Auditoría del Data Lake & Patcher
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowAuditModal(false)}
+                className="text-xs font-bold text-mid hover:text-white transition-colors"
+              >
+                Cerrar [X]
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-5">
+              <div className="flex items-center justify-between bg-white/5 border border-white/5 p-4 rounded-xl">
+                <div>
+                  <span className="block text-[9px] font-bold uppercase tracking-widest text-mid">Cliente en auditoría</span>
+                  <span className="font-black text-sm text-white uppercase">{auditTenantId}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[9px] font-bold uppercase tracking-widest text-mid">Dataset de BigQuery</span>
+                  <span className="font-mono text-xs text-teal-400 font-bold">media_impact_data</span>
+                </div>
+              </div>
+
+              {loadingAudit ? (
+                <div className="p-12 text-center text-mid text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-teal-400" />
+                  <span>Analizando consistencia de BigQuery...</span>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Primera fecha de datos */}
+                  <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                    <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <CalendarRange className="w-4 h-4 text-mid" /> Primera fecha registrada
+                    </span>
+                    <span className="font-mono text-xs font-bold bg-white/10 px-2 py-0.5 rounded text-white">
+                      {auditData?.first_date || 'Sin datos todavía'}
+                    </span>
+                  </div>
+
+                  {/* Diagnóstico de Huecos */}
+                  <div>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-mid mb-2">
+                      Huecos de datos detectados ({auditData?.gap_count || 0} días faltantes)
+                    </span>
+                    
+                    {(!auditData || auditData.gaps.length === 0) ? (
+                      <div className="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-center text-emerald-400 text-xs flex flex-col items-center gap-2">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                        <span>¡Línea de tiempo 100% íntegra! No se detectan huecos en la base de datos.</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="max-h-40 overflow-y-auto divide-y divide-white/5 border border-white/10 rounded-xl bg-white/[0.01] custom-scrollbar">
+                          {auditData.gaps.map((g, idx) => (
+                            <div key={idx} className="p-3 flex items-center justify-between text-xs text-red-400 font-mono">
+                              <span className="flex items-center gap-1.5">
+                                <AlertCircle className="w-3.5 h-3.5" /> Hueco: {g.display}
+                              </span>
+                              <span className="text-[10px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded font-black uppercase">Faltante</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Botón de Patcher */}
+                        <button
+                          onClick={handleRunPatcher}
+                          disabled={patching}
+                          className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-navy text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-500/25 disabled:opacity-50"
+                        >
+                          <Wrench className="w-4 h-4" /> 
+                          {patching ? 'Parchando Base de Datos...' : 'Parchar Huecos de Datos'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
