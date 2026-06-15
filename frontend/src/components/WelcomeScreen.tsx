@@ -26,6 +26,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  
+  const [validatingTenant, setValidatingTenant] = useState(false);
+  const [tenantError, setTenantError] = useState<string | null>(null);
 
   // REAL Google OAuth (Sign-In with Google via Firebase Auth)
   const handleGoogleSignIn = async () => {
@@ -63,12 +66,34 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     }
   };
 
-  const handleWorkspaceSubmit = (e: React.FormEvent) => {
+  const handleWorkspaceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTenantError(null);
     const cleanId = workspaceId.toLowerCase().replace(/\s+/g, '-').trim();
-    if (cleanId) {
-      // Redireccionar al inquilino dinámico en la demo (ej: /?tenant=sanitas)
-      window.location.href = `/?tenant=${cleanId}`;
+    if (!cleanId) return;
+
+    try {
+      setValidatingTenant(true);
+      const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+        ? 'http://localhost:8080' 
+        : '';
+      
+      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/tenant/config?tenant=${cleanId}`);
+      if (res.ok) {
+        const data = await res.json();
+        // Si el tenant existe en Firestore o es uno de los fallbacks permitidos, redireccionar
+        if (data.tenant_id === cleanId) {
+          window.location.href = `/?tenant=${cleanId}`;
+          return;
+        }
+      }
+      
+      // Si no existe, mostrar error estricto de organización no registrada
+      setTenantError(`Workspace ID '${cleanId}' no registrado. Ponte en contacto con tu consultor de LLYC.`);
+    } catch (err) {
+      setTenantError("Error de conexión al validar tu organización.");
+    } finally {
+      setValidatingTenant(false);
     }
   };
 
@@ -158,6 +183,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <p className="text-xs text-mid mt-1">Introduce el Workspace ID o subdominio asignado por LLYC</p>
             </div>
 
+            {tenantError && (
+              <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-start gap-2.5 text-xs text-left mb-4">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{tenantError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleWorkspaceSubmit} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-mid mb-1">Identificador de Organización (Tenant ID)</label>
@@ -168,11 +200,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     onChange={(e) => setWorkspaceId(e.target.value)}
                     placeholder="ej: mi-organizacion"
                     required
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-red transition-colors font-semibold"
+                    disabled={validatingTenant}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-red transition-colors font-semibold disabled:opacity-50"
                   />
                   <button 
                     type="submit"
-                    className="w-12 h-12 bg-red text-white rounded-xl hover:bg-red/90 flex items-center justify-center transition-colors shrink-0 shadow-lg shadow-red/25"
+                    disabled={validatingTenant}
+                    className="w-12 h-12 bg-red text-white rounded-xl hover:bg-red/90 flex items-center justify-center transition-colors shrink-0 shadow-lg shadow-red/25 disabled:opacity-50"
                   >
                     <ArrowRight className="w-5 h-5" />
                   </button>

@@ -109,10 +109,13 @@ async def get_tenant_config(request: Request, tenant: Optional[str] = Query(None
         }
     }
     
-    # 6. Obtener configuración o lanzar 404 si es un cliente inexistente
+    # 6. Obtener configuración o lanzar 404 si es un cliente inexistente (Safeguard de seguridad)
     config = tenant_database.get(detected_tenant)
     if not config:
-        config = tenant_database.get("llyc")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Organización '{detected_tenant}' no registrada en la plataforma analítica de LLYC."
+        )
         
     return config
 
