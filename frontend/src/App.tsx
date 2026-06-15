@@ -26,11 +26,31 @@ interface TenantConfig {
 
 const App: React.FC = () => {
   const { state, data, loading, fetchData, updateState } = useAnalytics();
-  const [showDashboard, setShowDashboard] = useState(false);
   const [lastUpdated, setLastUpdated] = useState('--:--');
   const [exporting, setExporting] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [isAdminView, setIsAdminView] = useState(false);
+
+  // Inicializa showDashboard en true si se accede con un tenant específico en la URL o subdominio
+  const [showDashboard, setShowDashboard] = useState(() => {
+    // 1. Detección por query param
+    const urlParams = new URLSearchParams(window.location.search);
+    const tenantParam = urlParams.get('tenant');
+    if (tenantParam && tenantParam.toLowerCase().trim() !== 'llyc') {
+      return true;
+    }
+    
+    // 2. Detección por subdominio (producción)
+    const host = window.location.hostname;
+    if (host && host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('web.app')) {
+      const parts = host.split('.');
+      if (parts.length > 2 && parts[0].toLowerCase().trim() !== 'www') {
+        return true;
+      }
+    }
+    
+    return false;
+  });
 
   // 1. Observador de estado de Auth oficial de Firebase para mantener consistencia de login
   useEffect(() => {

@@ -87,17 +87,8 @@ async def get_tenant_config(request: Request, tenant: Optional[str] = Query(None
     except Exception as e:
         logger.warning(f"No se pudo consultar el tenant '{detected_tenant}' en Firestore (usando fallback local): {e}")
 
-    # 5. Mapeo de bases de datos de inquilinos local (Fallback de cortesía si Firestore está vacío o sin internet)
+    # 5. Mapeo de bases de datos de inquilinos local (Solo LLYC como fallback del sistema base)
     tenant_database = {
-        "sanitas": {
-            "tenant_id": "sanitas",
-            "tenant_name": "Sanitas",
-            "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/e4/Sanitas_Logo.svg",
-            "primary_color": "#0070B0", # Azul Sanitas
-            "secondary_color": "#00A2E2",
-            "font_family": "Open Sans, sans-serif",
-            "support_email": "soporte.sanitas@llyc.global"
-        },
         "llyc": {
             "tenant_id": "llyc",
             "tenant_name": "LLYC Intelligence",
