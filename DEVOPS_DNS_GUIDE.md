@@ -32,11 +32,20 @@ Se deben aprovisionar los siguientes servicios en la consola de Firebase:
 1. Crear un proyecto en Firebase (ej: `llyc-intelligence-mcp`).
 2. Enlazarlo con el proyecto de Google Cloud (compartiendo el mismo ID de proyecto) para habilitar el uso integrado de Secret Manager y Cloud Run.
 
-### B. Firebase Auth (Gestor de Identidades)
+### B. Firebase Auth (Gestor de Identidades & Google OAuth)
 1. Activar **Firebase Authentication**.
-2. Habilitar el método de inicio de sesión por **Correo electrónico/Contraseña** y, opcionalmente, SSO corporativo de LLYC.
-3. Configurar la validación de dominios autorizados en la sección de Auth:
-   - Añadir `*.analytics.llyc.ai` y `localhost` a la lista de dominios de redirección autorizados.
+2. Habilitar el proveedor de inicio de sesión de **Google** (Google Sign-In).
+3. Configurar los **Dominios Autorizados** (Authorized Domains) en la pestaña *Ajustes de Firebase Auth*:
+   - Añadir `media-impact-llyc.web.app`
+   - Añadir `*.analytics.llyc.ai` (o el dominio final corporativo)
+   - Añadir `localhost` e `127.0.0.1` (para desarrollo local)
+4. Configurar el **Cliente de OAuth 2.0 de Google** en la consola de Google Cloud (`APIs y servicios > Credenciales > ID de cliente de OAuth 2.0`):
+   - **Orígenes de JavaScript autorizados**:
+     - `https://media-impact-llyc.web.app`
+     - `http://localhost:5173`
+     - `http://localhost:3000`
+   - **URIs de redirección autorizados**:
+     - `https://llyc-adtech-pruebas.firebaseapp.com/__/auth/handler` (Este callback es crítico para que el Popup de Firebase resuelva de forma exitosa).
 
 ### C. Firebase Hosting (Frontend & Enrutamiento de API)
 La plataforma utiliza un único dominio unificado mediante redirección en el archivo `firebase.json` de la raíz:
@@ -67,7 +76,8 @@ Para automatizar el pipeline de despliegue continuo de manera modular y permitir
 ### Variables de Entorno y Configuración Cloud
 * **`GCP_PROJECT_ID`**: El ID del proyecto de Google Cloud / Firebase donde se desplegará todo (ej: `llyc-intelligence-mcp-prod`). **Esto permite migrar la plataforma a otro proyecto de GCP simplemente cambiando este valor.**
 * **`GCP_SA_KEY`**: La clave privada JSON de la cuenta de servicio de GCP creada en el punto 3.
-* **`FIREBASE_SERVICE_ACCOUNT_KEY`**: La clave JSON de la cuenta de servicio generada desde la consola de Firebase (`Configuración del proyecto > Cuentas de servicio > Generar nueva clave privada`). Se requiere para que Firebase Hosting autorice la publicación del frontend.
+* **`VITE_FIREBASE_API_KEY`**: La API Key pública de Firebase Web (ej: `AIzaSyA2-o1pcwp5wNGCzEP09V34mdzG8LZMDak`). **Al guardarla aquí, se inyecta de forma segura únicamente en tiempo de compilación de React, protegiendo el código de tener secretos expuestos en Git.**
+* **`FIREBASE_SERVICE_ACCOUNT_KEY`**: La clave JSON de la cuenta de servicio generada desde la consola de Firebase. Se requiere para que Firebase Hosting autorice la publicación del frontend (opcional si se usa GCP_SA_KEY).
 
 ### Credenciales de APIs de Analítica
 * **`GEMINI_API_KEY`**: Clave de API de Google Gemini para habilitar los análisis inteligentes automatizados.

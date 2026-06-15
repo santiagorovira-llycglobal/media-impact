@@ -4,7 +4,7 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 // Configuración del Web SDK de Firebase para el proyecto LLYC Adtech Pruebas
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCx-PlaceholderKeyForCompilationOnly",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSy-PlaceholderKeyForCompilationOnly",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "llyc-adtech-pruebas.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "llyc-adtech-pruebas",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "llyc-adtech-pruebas.appspot.com",
