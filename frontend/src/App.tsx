@@ -1,4 +1,4 @@
-// LLYC Intelligence Dashboard App - React Frontend
+// LLYC Intelligence Dashboard App - React Frontend (Branded Multisite)
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
