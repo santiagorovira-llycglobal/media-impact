@@ -85,7 +85,36 @@ El proceso de desarrollo, confirmación y empuje de cambios debe seguir estricta
 
 ---
 
-## 🔒 4. Políticas de Seguridad y Secretos
+## 🛠️ 5. Protocolo de gcloud y Diagnóstico de Despliegues
+
+Cuando se trabaje con herramientas de **Google Cloud Platform (gcloud CLI)** o se investiguen fallos de despliegue, todo colaborador o agente de IA debe cumplir obligatoriamente con el siguiente protocolo:
+
+### Paso 1: Verificación de Proyecto Activo (Always Check Project)
+* Nunca asumir o asumir por defecto qué proyecto de GCP está activo en el entorno.
+* Antes de ejecutar cualquier comando de IAM, servicios, despliegue o habilitación de APIs, se debe verificar explícitamente el proyecto seleccionado ejecutando:
+  ```bash
+  gcloud config get-value project
+  ```
+* Confirmar o cambiar el proyecto activamente si no coincide con el proyecto objetivo:
+  ```bash
+  gcloud config set project <proyecto_objetivo>
+  ```
+
+### Paso 2: Diagnóstico Profundo de Fallos de Compilación (Cloud Build Logs)
+* Si el despliegue de Cloud Run o Cloud Functions falla durante la fase de empaquetado/construcción, **está prohibido limitarse únicamente a la información superficial provista por GitHub Actions**.
+* El desarrollador o agente debe ir directamente al motor de compilación remota de GCP para inspeccionar el historial y logs completos:
+  * **Listar las últimas compilaciones** para identificar el `BUILD_ID` que ha fallado:
+    ```bash
+    gcloud builds list --limit=5
+    ```
+  * **Obtener los logs detallados** de la compilación utilizando el ID respectivo para ver trazas completas de Docker, sintaxis o dependencias:
+    ```bash
+    gcloud builds log <BUILD_ID>
+    ```
+
+---
+
+## 🔒 6. Políticas de Seguridad y Secretos
 
 * **Protección de Credenciales**: Está estrictamente prohibido comprometer archivos `.env`, tokens OAuth, API Keys (GA4, Adobe, Brandlight, Peec.ai) o claves JSON de GCP en el repositorio.
 * **GCP Secret Manager**: Toda credencial sensible en entornos remotos debe leerse directamente desde GCP Secret Manager en tiempo de ejecución.

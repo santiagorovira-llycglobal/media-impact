@@ -14,3 +14,6 @@ scipy
 python-multipart
 python-dateutil
 google-cloud-secret-manager
+jinja2
+xhtml2pdf
+reportlab
