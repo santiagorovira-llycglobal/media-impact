@@ -1,124 +1,91 @@
-# LLYC Intelligence Dashboard — Brandlight BI & Multi-Tenant Roadmap
+# LLYC Intelligence Dashboard — Brandlight BI & Enterprise BigQuery Architecture
 
-Este documento detalla los objetivos, arquitectura, fases de implementación y preguntas estratégicas para integrar la API de **Brandlight BI** como un proveedor de datos de primer nivel dentro de nuestro ecosistema analítico, alineado con las especificaciones del Product Owner para una **infraestructura multi-tenant escalable y altamente segura**.
-
----
-
-## 🎯 Objetivo del Proyecto
-
-El objetivo principal es enriquecer el **LLYC Intelligence Dashboard** incorporando métricas avanzadas de **visibilidad orgánica, Share of Voice (SoV) y recomendaciones de contenido basadas en IA** provistas por la plataforma **Brandlight**. 
-
-Al integrar Brandlight, el dashboard de LLYC ofrecerá a los consultores y clientes un panorama holístico:
-1. **Tráfico y Conversión (GA4 / Adobe Analytics)**: Cuántos usuarios entran y cómo se comportan.
-2. **Análisis de Comportamiento de IA (Peec.ai)**: Interacción de los usuarios con agentes de IA.
-3. **Visibilidad y Recomendaciones de Contenido (Brandlight)**: Posicionamiento frente a la competencia en motores de respuesta de IA y sugerencias de creación de contenido.
-
-Como **servicio consultor multi-tenant**, cada cliente de LLYC accederá a su propio espacio personalizado y seguro mediante un subdominio único, administrado con un sistema centralizado de superadministración.
+Este documento detalla los objetivos, arquitectura de datos (Data Warehouse), flujos de trabajo e interfaz de usuario (UX) para el **LLYC Intelligence Dashboard**, alineado con la visión de una **plataforma analítica empresarial, multi-tenant, altamente escalable e integrada con Google BigQuery**.
 
 ---
 
-## 🏛️ Arquitectura Corporativa y de Seguridad (Multi-Tenant)
+## 🎯 Visión del MVP & Evolución de Arquitectura
 
-De acuerdo con las especificaciones del Product Owner, la arquitectura general del sistema se diseñará bajo los siguientes estándares de seguridad y multi-tenancy:
+El LLYC Intelligence Dashboard evoluciona de ser un prototipo de consulta en tiempo real ("Direct API-to-UI") a convertirse en una **plataforma SaaS analítica robusta respaldada por un Data Lake en Google BigQuery**.
 
-### 1. Gestión de Subdominios y Personalización (Tenant Detection)
-* **Subdominios dedicados por cliente** (ej. `clienteA.analytics.llyc.ai`, `clienteB.analytics.llyc.ai`).
-* El DNS es gestionado mediante **Firebase**, garantizando propagación rápida y certificados SSL automatizados.
-* El Frontend SPA detecta dinámicamente el subdominio (`window.location.hostname`) para determinar el identificador del cliente (`tenant_id`), aplicando de forma dinámica:
-  * Logotipo corporativo del cliente.
-  * Paleta de colores primarios y secundarios.
-  * Fuentes y estilos tipográficos.
-  * Filtrado estricto de llamadas al backend restringidas a sus conexiones autorizadas.
+### 🔄 Los 3 Cambios de Paradigma Clave:
 
-### 2. Autenticación Centralizada (Firebase Auth)
-* Registro, inicio de sesión y gestión de sesiones delegados en **Firebase Auth**.
-* El frontend captura el token JWT (JSON Web Token) y lo envía en la cabecera `Authorization: Bearer <JWT>` de todas las peticiones al backend.
-* El backend FastAPI valida la firma del JWT, extrae los claims del usuario (ID, email, tenant asignado, rol) y valida que el usuario pertenezca al subdominio desde el cual se está consultando.
-
-### 3. Almacenamiento Seguro de Credenciales (GCP Secret Manager)
-* Las claves privadas, API keys de Brandlight/Peec.ai, y tokens de OAuth de GA4/Adobe son **activos de alta sensibilidad**.
-* Para garantizar el cumplimiento normativo de ciberseguridad corporativa, estas credenciales **nunca se guardarán en bases de datos relacionales estándar en texto plano**.
-* Se guardarán encriptadas en **GCP Secret Manager** con nombres estructurados jerárquicamente:
-  `projects/<gcp-project>/secrets/llyc-mcp-<tenant_id>-<platform>-creds`
-* El backend se conectará de manera directa al Secret Manager de GCP utilizando roles mínimos de IAM asociados a su cuenta de servicio de Google Cloud Function / Cloud Run.
-
-### 4. Perfiles de Acceso (Self-Service vs. Superadmin)
-* **Cliente / Self-Service**: Cada cliente puede dar de alta y actualizar sus propias credenciales de GA4, Adobe, Brandlight y Peec.ai de forma autónoma en una sección dedicada de configuración en su portal.
-* **Superadmin (LLYC)**: Vista global exclusiva para consultores de LLYC que les permite:
-  * Ver el estado de salud de todas las conexiones activas de todos los inquilinos.
-  * Depurar errores de API o llamadas fallidas.
-  * Gestionar y aprovisionar nuevos clientes (creando nuevos tenants, asignando subdominios y guardando sus secretos iniciales en GCP).
+1. **Obsolescencia de la Welcome Screen**:
+   * *Antes*: El usuario entraba a una pantalla de bienvenida que le solicitaba conectar credenciales o subir archivos cada vez.
+   * *Ahora*: El cliente accede a su subdominio (ej: `sanitas.analytics.llyc.ai`) y, tras autenticarse mediante Firebase Auth, **aterriza directamente en su Dashboard pre-configurado**. Las conexiones ya han sido parametrizadas de forma segura por el Superadmin de LLYC.
+2. **Carga de Datos CSV en Caliente**:
+   * *Antes*: El CSV se subía en la Welcome Screen para "inicializar" el dashboard.
+   * *Ahora*: La carga de archivos locales (CSV/Excel) se integra como un **botón de acción directa dentro del propio Dashboard** (en la barra de filtros o cabecera), permitiendo análisis complementarios en caliente sin romper el flujo de visualización.
+3. **Arquitectura basada en BigQuery (ETL vs. Live APIs)**:
+   * *Antes*: El frontend/backend hacía peticiones en tiempo real a las APIs externas (GA4, Adobe, Brandlight) para pintar los gráficos (lento, propenso a caídas y limitaciones de cuota / rate limits).
+   * *Ahora*: Las credenciales guardadas disparan un **motor ETL en segundo plano**. El backend extrae la información de las APIs de origen, la unifica y la almacena estructuradamente en **Google BigQuery**. El Dashboard consulta **únicamente a BigQuery**, garantizando velocidad de carga ultrarrápida (<500ms), persistencia histórica e independencia de las APIs de origen.
 
 ---
 
-## 🏗️ Arquitectura de la Integración de Brandlight
+## 🏛️ Arquitectura de Datos Unificada (ETL & BigQuery)
 
-Para mantener el diseño simétrico del backend FastAPI, adaptaremos la API de Brandlight al patrón de abstracción unificado (`AnalyticsService`).
+```
+[ GA4 / Adobe Analytics ] ──┐
+[ Peec.ai Analytics ] ────┼──► [ Proceso ETL ] ──► [ Google BigQuery ] ──► [ FastAPI Backend ] ──► [ React Frontend ]
+[ Brandlight BI API ] ────┘    (GCP Cloud Run)    (Tablas por Tenant)     (Consultas Estructuradas) (Visualización)
+```
 
-### 1. Mapeo de Conceptos
+### 1. El Proceso ETL (Extract, Transform, Load)
+* **Activación**: Se ejecuta de forma programada (cron diario/semanal) o se dispara bajo demanda cuando el Superadmin añade o actualiza credenciales.
+* **Extracción**: Consume datos de GA4 (API de Reportes), Adobe (analytics API), Peec.ai y Brandlight (reportes de visibilidad y Share of Voice).
+* **Transformación**: Normaliza las métricas y dimensiones a un esquema común (Schema Alignment):
+  - Fechas en formato estándar `YYYY-MM-DD`.
+  - Normalización de dimensiones de tráfico orgánico, referido de IA y búsquedas orgánicas.
+* **Carga**: Inserta los registros procesados en **Google BigQuery**.
 
-| Concepto de Abstracción | Equivalente en Brandlight | Endpoint de la API | Descripción |
-| :--- | :--- | :--- | :--- |
-| **Cuenta (Account)** | **Marca (Brand)** | `GET /v1/brands` | Cada marca configurada en la cuenta de Brandlight (ej. "Acme Corp"). |
-| **Propiedad (Property)** | **Localización (Location)** | `GET /v1/brands/:brand/reports` | Las regiones geográficas soportadas en los reportes (ej. `US`, `GB`, `global`). |
-| **Rango de Fechas** | **Rango de Reportes** | Filtro de consulta | Rango de tiempo para consolidar las métricas de visibilidad y SoV. |
+### 2. Estructura de BigQuery (Data Warehouse Schema)
+Para garantizar la segregación absoluta de inquilinos, utilizaremos un dataset único con **tablas particionadas por `tenant_id`**, o datasets independientes por cliente si las políticas de ciberseguridad corporativas lo exigen:
 
-### 2. Estructura de Clases en el Backend
-
-Crearemos la clase `BrandlightService` en `backend/app/services/mcp_analytics/brandlight_service.py` heredando de `AnalyticsService` e implementando:
-
-* `list_accounts() -> List[GAAccount]`
-* `list_properties(account_id) -> List[GAProperty]`
-* `run_report(request: RunReportRequest) -> RunReportResponse`
-  * Mapeará consultas de métricas de visibilidad (`visibilityScore`) o cuota de voz (`shareOfVoice`) a formato tabular estructurado.
-* `get_metadata(property_id) -> Dict[str, Any]`
-
----
-
-## 📅 Fases de Implementación (MVP Roadmap)
-
-### Fase 1: Backend Core, GCP Secret Manager & CI/CD Setup
-* Configurar workflows de **GitHub Actions** (`.github/workflows/deploy.yml`) para automatizar el build y deployment en GCP de los servicios de frontend y backend como funciones/run-services separadas.
-* Crear las bases para la comunicación del backend con **GCP Secret Manager** para obtener y guardar secretos cifrados.
-* Implementar `BrandlightService` en Python heredando de `AnalyticsService` con rate limit de seguridad (`time.sleep(1.5)`).
-* Implementar tests unitarios robustos con mocks para asegurar estabilidad del servicio.
-
-### Fase 2: Configuración Multitenant en Frontend & Backend
-* **Frontend Subdomain Router**: Configurar detección de subdominios en React y carga dinámica de assets del inquilino (branding, logo).
-* **Firebase Auth Integration**: Implementar verificación de tokens JWT en el middleware del backend FastAPI (`backend/app/services/auth_middleware.py`).
-* **Self-Service Connection UI**: Diseñar la sección de configuración para que el cliente introduzca de forma segura sus credenciales de GA4, Adobe, Brandlight y Peec.ai.
-* **Superadmin View**: Diseñar el panel general de LLYC para gestionar los inquilinos.
-
-### Fase 3: Endpoints de Negocio y KPIs de Brandlight
-* Implementar mapeos de KPIs para el dashboard a partir de los reportes periódicos de Brandlight.
-* Crear endpoints FastAPI dedicados para recomendaciones:
-  * `GET /api/v1/mcp-analytics/brandlight/new-content-opportunities`
-  * `GET /api/v1/mcp-analytics/brandlight/my-content-recommendations`
-
-### Fase 4: Integración UI, Pruebas y QA
-* Conectar las llamadas de `useAnalytics.ts` para renderizar datos dinámicos de Brandlight.
-* Pintar comparativas de marcas y competidores de visibilidad en el gráfico de línea.
-* Llenar el widget de Share of Voice (SoV) de tipo dona con competidores reales.
-* Validar el flujo extremo a extremo en local y entornos staging en GCP.
+* **Tabla `fact_traffic_evolution`**:
+  `tenant_id | date | source | medium | total_sessions | ai_referred_sessions | engagement_score`
+* **Tabla `fact_ai_visibility`**:
+  `tenant_id | date | engine_name | visibility_score | sentiment_score | share_of_voice`
+* **Tabla `dim_content_recommendations`**:
+  `tenant_id | date | topic | priority_score | recommendation_strategy | execution_steps`
 
 ---
 
-## 🗣️ Preguntas para Discusión (Back-and-Forth)
+## 🎨 Flujos de Experiencia de Usuario (UX)
 
-En base a los requerimientos corporativos del Product Owner, ampliamos la discusión a los siguientes puntos clave:
+### A. Experiencia del Cliente (End User)
+1. El usuario accede a `https://sanitas.analytics.llyc.global`.
+2. Visualiza una pantalla de **Login Corporativo** (Firebase Auth).
+3. Tras loguearse, entra directamente a su Dashboard pintado con su logotipo oficial y sus colores corporativos (azul Sanitas).
+4. El Dashboard carga instantáneamente los datos de tráfico e IA desde las tablas de BigQuery.
+5. Si desea cruzar datos históricos con un reporte local nuevo, hace clic en el botón **"Importar datos locales (CSV)"** en la barra superior para procesar el archivo en caliente.
 
-### ❓ Pregunta 1: Arquitectura de Secretos e Inscripción de Clientes
-Dado que el cliente podrá añadir sus API keys (GA4, Adobe, Brandlight, Peec.ai) de forma autoservicio:
-* *¿Queremos que el backend escriba de forma directa las API keys añadidas por el cliente en el GCP Secret Manager en caliente, o el backend notificará al Superadmin para que apruebe y cree la conexión tras verificar la validez de las credenciales?*
+### B. Experiencia del Consultor de LLYC (Superadmin)
+1. El consultor accede a `https://analytics.llyc.global/admin`.
+2. Se autentica obligatoriamente con su cuenta corporativa de Google Workspace (`@llyc.global`).
+3. Accede al **Panel de Control Centralizado**:
+   - **Gestor de Tenants**: Crear un nuevo cliente (ej: `Sanitas`), subir su logotipo en SVG, definir sus colores hexadecimales y guardar.
+   - **Gestor de Conexiones (Secret Manager)**: Introducir las API Keys, tokens OAuth o Client Secrets de GA4, Adobe, Brandlight y Peec de forma segura.
+   - **Trigger de ETL**: Botón para forzar la sincronización inicial de datos del nuevo cliente hacia BigQuery en caliente.
 
-### ❓ Pregunta 2: Gestión de Sesión e Inquilinos (Tenants) en el JWT
-Para asegurar que el tráfico de un subdominio no pueda acceder a datos de otro:
-* *¿Cómo se mapeará la asignación de inquilinos? ¿Manejaremos claims personalizados en el JWT de Firebase (ej. `customClaims.tenantId`) para que el backend valide el acceso de forma inmediata sin consultar la base de datos en cada petición, o haremos una validación en tiempo real contra una base de datos de inquilinos?*
+---
 
-### ❓ Pregunta 3: Diseño de la Comparativa de Competidores en la UI
-Para el gráfico de líneas del Share of Voice o Visibilidad frente a competidores devuelto por Brandlight:
-* *¿Deberíamos permitir al cliente seleccionar dinámicamente qué competidores (de la lista retornada por Brandlight) desea visualizar en el gráfico, o mostramos por defecto los 3 competidores principales basándonos en su puntuación media?*
+## 📅 Roadmap de Implementación Refactorizado
 
-### ❓ Pregunta 4: Visualización de Recomendaciones en la UI
-Brandlight provee sugerencias detalladas estructuradas con estrategias e instrucciones.
-* *¿Cómo imaginas la experiencia de usuario para leer estas sugerencias? ¿Un modal desplegable en cada fila de tópicos recomendados, o una pestaña dedicada de "Plan de Contenidos IA" en el Dashboard?*
+### 🏁 Fase 1: Core del Backend, Secret Manager & BigQuery Setup
+* [x] Diseñar y desplegar `SecretManagerService` para resguardo de llaves sensibles.
+* [x] Crear endpoints CRUD de administración de Tenants (`endpoints.py`) protegidos para cuentas `@llyc.global`.
+* [ ] Crear las tablas base y esquemas de datos en **Google BigQuery**.
+* [ ] Diseñar el servicio de conexión a BigQuery (`BigQueryService`) en FastAPI para servir datos tabulares al dashboard.
+
+### ⚙️ Fase 2: Proceso ETL & Conectores de Datos (Brandlight)
+* [ ] Refactorizar el `BrandlightService` bajo el patrón `AnalyticsService` para extraer métricas de visibilidad y Share of Voice.
+* [ ] Implementar el script o función de **ETL unificada** (`etl_service.py`) que extraiga datos de los conectores (Brandlight, Peec, GA4, Adobe) y los cargue en BigQuery.
+
+### 💻 Fase 3: Frontend Admin Panel & Refactorización de UX
+* [ ] **Refactor de Bienvenida**: Convertir `WelcomeScreen.tsx` en una pantalla de Login pura o derivar el acceso directo al dashboard según el subdominio.
+* [ ] **Integrar CSV en el Dashboard**: Mover la carga de CSV de la pantalla de bienvenida a un botón/modal interactivo dentro del Navbar o barra de filtros.
+* [ ] **Crear la vista `/admin`**: Diseñar el formulario interactivo para que los consultores de LLYC administren clientes y guarden secretos de forma visual.
+
+### 🧪 Fase 4: Integración, QA y Despliegue de Producción
+* [ ] Validar los permisos de IAM de la cuenta de servicio de GCP para leer/escribir en BigQuery.
+* [ ] Pruebas extremas de visualización dinámica cruzando datos de BigQuery.
