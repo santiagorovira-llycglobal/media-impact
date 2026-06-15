@@ -6,9 +6,33 @@ on:
       - main
 
 jobs:
+  # 🔍 JOB 1: Detectar cambios en Frontend y Backend
+  detect-changes:
+    name: 🔍 Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🗂️ Path Filter
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  # 🚀 JOB 2: Desplegar Backend (solo si hay cambios en backend/)
   deploy-backend:
     name: 🚀 Deploy Backend to Cloud Run
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.backend == 'true' }}
     environment: prod
     steps:
       - name: 📥 Checkout Code
@@ -25,22 +49,26 @@ jobs:
         with:
           service: llyc-intelligence-api
           region: us-central1
-          # Desplegar desde el código fuente del subdirectorio 'backend'
           source: backend
           env_vars: |
             GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-          # Permitir invocaciones públicas (la seguridad se maneja mediante JWT de Firebase en el código)
           flags: --allow-unauthenticated
 
-  # COMENTADO TEMPORALMENTE: Habilitar cuando se obtenga la clave de FIREBASE_SERVICE_ACCOUNT_KEY en GitHub Secrets
+  # 🎨 JOB 3: Desplegar Frontend (solo si hay cambios en frontend/ Y espera secuencialmente al backend si este corre)
+  # COMENTADO TEMPORALMENTE: Para activar, descomenta las líneas siguientes y asegúrate de configurar FIREBASE_SERVICE_ACCOUNT_KEY en GitHub Secrets.
   # deploy-frontend:
   #   name: 🎨 Deploy Frontend to Firebase Hosting
   #   runs-on: ubuntu-latest
   #   environment: prod
-  #   needs: deploy-backend  # Esperamos a que el backend se despliegue para asegurar sincronía de APIs
+  #   needs: [detect-changes, deploy-backend]
+  #   # Se ejecuta si hay cambios en el frontend Y (el backend se desplegó con éxito O fue omitido porque no tenía cambios)
+  #   if: |
+  #     always() &&
+  #     needs.detect-changes.outputs.frontend == 'true' &&
+  #     (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
   #   steps:
   #     - name: 📥 Checkout Code
   #       uses: actions/checkout@v4
