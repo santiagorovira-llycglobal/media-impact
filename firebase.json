@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "media-impact-llyc",
     "public": "frontend/dist",
     "ignore": [
       "firebase.json",
