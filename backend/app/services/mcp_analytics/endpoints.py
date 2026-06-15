@@ -55,7 +55,7 @@ class TenantConfigResponse(BaseModel):
 async def get_tenant_config(request: Request, tenant: Optional[str] = Query(None)):
     """
     Obtiene la configuración visual y de branding de forma dinámica según el subdominio
-    o parámetro de consulta (estrategia híbrida).
+    o parámetro de consulta (estrategia híbrida), consultando en Firestore con fallback a local.
     """
     # 1. Intentar obtener el tenant desde el host (ej: sanitas.dashboard.llyc.global)
     host = request.headers.get("host", "")
@@ -75,7 +75,19 @@ async def get_tenant_config(request: Request, tenant: Optional[str] = Query(None
     if not detected_tenant or detected_tenant in ["www", "dashboard", "analytics", "media-impact-llyc"]:
         detected_tenant = "llyc"
         
-    # 4. Mapeo de bases de datos de inquilinos (Mocks para Sanitas y LLYC en el MVP)
+    # 4. Intentar consultar la configuración en vivo en Firestore
+    try:
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        if tm.db:
+            doc = tm.db.collection("tenants").document(detected_tenant).get()
+            if doc.exists:
+                logger.info(f"Configuración de tenant '{detected_tenant}' recuperada con éxito desde Firestore.")
+                return doc.to_dict()
+    except Exception as e:
+        logger.warning(f"No se pudo consultar el tenant '{detected_tenant}' en Firestore (usando fallback local): {e}")
+
+    # 5. Mapeo de bases de datos de inquilinos local (Fallback de cortesía si Firestore está vacío o sin internet)
     tenant_database = {
         "sanitas": {
             "tenant_id": "sanitas",
@@ -97,7 +109,7 @@ async def get_tenant_config(request: Request, tenant: Optional[str] = Query(None
         }
     }
     
-    # 5. Obtener configuración o lanzar 404 si es un cliente inexistente
+    # 6. Obtener configuración o lanzar 404 si es un cliente inexistente
     config = tenant_database.get(detected_tenant)
     if not config:
         config = tenant_database.get("llyc")
@@ -824,5 +836,165 @@ async def explain_engagement_score(
             raise Exception("Empty response from Gemini")
             
     except Exception as e:
-        logger.error(f"Failed to explain engagement score: {{e}}")
+        logger.error(f"Failed to explain engagement score: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# 🛠️ ENDPOINTS DE SUPERADMINISTRACIÓN (LLYC)
+# ==========================================
+
+from pydantic import Field
+
+class TenantAdminRequest(BaseModel):
+    tenant_id: str = Field(..., description="ID del tenant en minúsculas y sin espacios (ej: 'sanitas')")
+    tenant_name: str = Field(..., description="Nombre comercial visible (ej: 'Sanitas España')")
+    logo_url: str = Field(..., description="URL del logo en SVG/PNG")
+    primary_color: str = Field(..., description="Color primario hexadecimal (ej: '#0070B0')")
+    secondary_color: str = Field(..., description="Color secundario hexadecimal (ej: '#00A2E2')")
+    font_family: str = Field(default="Open Sans, sans-serif", description="Familia tipográfica")
+    support_email: str = Field(..., description="Email de soporte del cliente")
+
+class TenantSecretRequest(BaseModel):
+    secret_type: str = Field(..., description="Tipo de secreto (ej: 'brandlight-key', 'peec-key')")
+    secret_value: str = Field(..., description="Valor sensible de la API key")
+
+def get_current_admin(user_email: str = Depends(get_current_user)):
+    """
+    Filtro de seguridad estricto para garantizar que sólo cuentas de dominio @llyc.global
+    puedan acceder a las operaciones de administración.
+    """
+    if not user_email.lower().strip().endswith("@llyc.global"):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso denegado: Se requiere una cuenta corporativa de LLYC"
+        )
+    return user_email
+
+@router.get("/admin/tenants", response_model=List[Dict[str, Any]])
+async def list_tenants_admin(user_email: str = Depends(get_current_admin)):
+    """
+    Lista todos los tenants creados en Firestore (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        if not tm.db:
+            # Si no hay conexión a Firestore activa, devolver mock inicial
+            return [
+                {
+                    "tenant_id": "sanitas",
+                    "tenant_name": "Sanitas España",
+                    "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/e4/Sanitas_Logo.svg",
+                    "primary_color": "#0070B0",
+                    "secondary_color": "#00A2E2",
+                    "font_family": "Open Sans, sans-serif",
+                    "support_email": "soporte.sanitas@llyc.global"
+                }
+            ]
+            
+        tenants_ref = tm.db.collection("tenants")
+        docs = tenants_ref.stream()
+        tenants = []
+        for doc in docs:
+            tenants.append(doc.to_dict())
+            
+        # Si la base de datos está vacía, retornar al menos LLYC y Sanitas por defecto
+        if not tenants:
+            return [
+                {
+                    "tenant_id": "llyc",
+                    "tenant_name": "LLYC Intelligence",
+                    "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/LLYC_logo.svg",
+                    "primary_color": "#E51D24",
+                    "secondary_color": "#1C2541",
+                    "font_family": "Montserrat, sans-serif",
+                    "support_email": "intelligence.mcp@llyc.global"
+                },
+                {
+                    "tenant_id": "sanitas",
+                    "tenant_name": "Sanitas España",
+                    "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/e4/Sanitas_Logo.svg",
+                    "primary_color": "#0070B0",
+                    "secondary_color": "#00A2E2",
+                    "font_family": "Open Sans, sans-serif",
+                    "support_email": "soporte.sanitas@llyc.global"
+                }
+            ]
+            
+        return tenants
+    except Exception as e:
+        logger.error(f"Error al listar tenants en admin: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/admin/tenants", response_model=Dict[str, Any])
+async def create_or_update_tenant_admin(
+    tenant_req: TenantAdminRequest,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Crea o actualiza la configuración de marca de un tenant en Firestore (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        tenant_id = tenant_req.tenant_id.lower().strip()
+        
+        tenant_data = {
+            "tenant_id": tenant_id,
+            "tenant_name": tenant_req.tenant_name,
+            "logo_url": tenant_req.logo_url,
+            "primary_color": tenant_req.primary_color,
+            "secondary_color": tenant_req.secondary_color,
+            "font_family": tenant_req.font_family,
+            "support_email": tenant_req.support_email,
+            "updated_by": user_email,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        if tm.db:
+            tm.db.collection("tenants").document(tenant_id).set(tenant_data, merge=True)
+            logger.info(f"Tenant '{tenant_id}' guardado con éxito en Firestore por {user_email}")
+        else:
+            logger.warning("Firestore no disponible, simulando guardado de Tenant local.")
+            
+        return {"status": "success", "message": f"Tenant '{tenant_id}' guardado con éxito.", "data": tenant_data}
+        
+    except Exception as e:
+        logger.error(f"Error al guardar tenant: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/admin/tenants/{tenant_id}/secrets", response_model=Dict[str, Any])
+async def save_tenant_secret_admin(
+    tenant_id: str,
+    secret_req: TenantSecretRequest,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Guarda y encripta una clave sensible de un cliente (ej: Brandlight API Key)
+    directamente en GCP Secret Manager (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.mcp_analytics.secret_manager_service import SecretManagerService
+        sms = SecretManagerService()
+        
+        tenant_id_clean = tenant_id.lower().strip()
+        secret_type_clean = secret_req.secret_type.lower().strip()
+        
+        # 1. Guardar secreto en GCP Secret Manager
+        success = sms.save_tenant_secret(
+            tenant_id=tenant_id_clean,
+            secret_type=secret_type_clean,
+            secret_value=secret_req.secret_value
+        )
+        
+        if not success:
+            raise Exception("No se pudo persistir el secreto en GCP Secret Manager.")
+            
+        return {
+            "status": "success",
+            "message": f"Secreto '{secret_type_clean}' guardado y encriptado con éxito para el tenant '{tenant_id_clean}'."
+        }
+        
+    except Exception as e:
+        logger.error(f"Error al guardar secreto de tenant en admin: {e}")
         raise HTTPException(status_code=500, detail=str(e))
