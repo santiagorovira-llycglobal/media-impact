@@ -8,21 +8,21 @@ export default {
     extend: {
       colors: {
         red: {
-          DEFAULT: '#F54963',
-          light: '#FDE8EC',
+          DEFAULT: 'var(--red)',
+          light: 'var(--red-light)',
         },
         navy: {
-          DEFAULT: '#0A263B',
-          light: '#E8EDF1',
+          DEFAULT: 'var(--navy)',
+          light: 'var(--navy-light)',
         },
         teal: {
-          DEFAULT: '#36A7B7',
-          light: '#E3F5F7',
+          DEFAULT: 'var(--teal)',
+          light: 'var(--teal-light)',
         },
-        mid: '#7A8C99',
+        mid: 'var(--mid)',
         dashboard: {
-          bg: '#F0F2F4',
-          border: 'rgba(10,38,59,.09)',
+          bg: 'var(--bg)',
+          border: 'var(--border)',
         }
       },
       fontFamily: {

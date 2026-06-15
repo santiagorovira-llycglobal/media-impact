@@ -10,12 +10,70 @@ import { TopicsCard } from './components/TopicsCard';
 import { DomainsTable } from './components/DomainsTable';
 import { useAnalytics } from './hooks/useAnalytics';
 
+interface TenantConfig {
+  tenant_id: string;
+  tenant_name: string;
+  logo_url: string;
+  primary_color: string;
+  secondary_color: string;
+  font_family: string;
+  support_email: string;
+}
+
 const App: React.FC = () => {
   const { state, data, loading, fetchData, updateState } = useAnalytics();
   const [showDashboard, setShowDashboard] = useState(false);
   const [lastUpdated, setLastUpdated] = useState('--:--');
   const [exporting, setExporting] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
+
+  const [tenant, setTenant] = useState<TenantConfig>({
+    tenant_id: 'llyc',
+    tenant_name: 'LLYC Intelligence',
+    logo_url: 'https://upload.wikimedia.org/wikipedia/commons/e/e5/LLYC_logo.svg',
+    primary_color: '#F54963',
+    secondary_color: '#36A7B7',
+    font_family: 'Montserrat, sans-serif',
+    support_email: 'intelligence.mcp@llyc.global'
+  });
+
+  // 0. Efecto para cargar dinámicamente la configuración visual del Tenant (Sanitas, LLYC, etc.)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tenantParam = urlParams.get('tenant');
+    
+    const fetchTenantConfig = async () => {
+      try {
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+          ? 'http://localhost:8080' 
+          : '';
+        const url = tenantParam 
+          ? `${API_BASE_URL}/api/v1/mcp-analytics/tenant/config?tenant=${tenantParam}`
+          : `${API_BASE_URL}/api/v1/mcp-analytics/tenant/config`;
+          
+        const res = await fetch(url);
+        if (res.ok) {
+          const data: TenantConfig = await res.json();
+          setTenant(data);
+          
+          // Aplicar la paleta de colores de marca dinámicamente en el documento
+          if (data.primary_color) {
+            document.documentElement.style.setProperty('--red', data.primary_color);
+            // Generar una versión al 10% de opacidad para el color de fondo claro
+            document.documentElement.style.setProperty('--red-light', data.primary_color + '1A');
+          }
+          if (data.secondary_color) {
+            document.documentElement.style.setProperty('--teal', data.secondary_color);
+            document.documentElement.style.setProperty('--teal-light', data.secondary_color + '1A');
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching tenant config:", err);
+      }
+    };
+    
+    fetchTenantConfig();
+  }, []);
 
   const [mockData, setMockData] = useState({
     total_sessions: "128",
@@ -213,6 +271,7 @@ const App: React.FC = () => {
         onSelectAdobe={handleSelectAdobe}
         onSelectPeec={handleSelectPeec}
         onFileUpload={handleFileUpload}
+        tenant={tenant}
       />
     );
   }
@@ -239,6 +298,7 @@ const App: React.FC = () => {
         loading={loading} 
         exporting={exporting}
         lastUpdated={lastUpdated} 
+        tenant={tenant}
       />
       <FilterBar 
         state={state} 

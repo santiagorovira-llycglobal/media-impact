@@ -8,12 +8,22 @@ interface HeaderProps {
   loading: boolean;
   exporting: boolean;
   lastUpdated: string;
+  tenant?: {
+    tenant_id: string;
+    tenant_name: string;
+    logo_url: string;
+    primary_color: string;
+  };
 }
 
-export const Header: React.FC<HeaderProps> = ({ onRefresh, onExport, loading, exporting, lastUpdated }) => (
+export const Header: React.FC<HeaderProps> = ({ onRefresh, onExport, loading, exporting, lastUpdated, tenant }) => (
   <header className="h-16 bg-white border-b border-dashboard-border flex items-center justify-between px-8 sticky top-0 z-[50]">
     <div className="flex items-center gap-6">
-      <div className="text-red font-black text-xl tracking-tighter">LLYC</div>
+      {tenant?.logo_url ? (
+        <img src={tenant.logo_url} alt={tenant.tenant_name} className="h-8 object-contain max-w-[120px]" />
+      ) : (
+        <div className="text-red font-black text-xl tracking-tighter">{tenant?.tenant_name || 'LLYC'}</div>
+      )}
       <div className="h-4 w-[1px] bg-dashboard-border"></div>
       <div className="text-[11px] font-black uppercase tracking-widest text-navy">
         Intelligence Dashboard <span className="text-mid font-medium">2026</span>

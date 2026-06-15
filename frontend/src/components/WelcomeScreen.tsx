@@ -6,13 +6,20 @@ interface WelcomeScreenProps {
   onSelectAdobe: (creds: any) => void;
   onSelectPeec: (apiKey: string) => void;
   onFileUpload: (file: File) => void;
+  tenant?: {
+    tenant_id: string;
+    tenant_name: string;
+    logo_url: string;
+    primary_color: string;
+  };
 }
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ 
   onSelectGA4, 
   onSelectAdobe, 
   onSelectPeec,
-  onFileUpload 
+  onFileUpload,
+  tenant
 }) => {
   const [showAdobeModal, setShowAdobeModal] = useState(false);
   const [showPeecModal, setShowPeecModal] = useState(false);
@@ -32,8 +39,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
   return (
     <div className="fixed inset-0 bg-dashboard-bg flex items-center justify-center p-5 z-[1000]">
-      <div className="bg-white rounded-2xl p-10 max-w-3xl w-full shadow-2xl text-center">
-        <div className="text-red font-bold text-3xl mb-6 tracking-tighter">LLYC</div>
+      <div className="bg-white rounded-2xl p-10 max-w-3xl w-full shadow-2xl flex flex-col items-center text-center">
+        {tenant?.logo_url ? (
+          <img src={tenant.logo_url} alt={tenant.tenant_name} className="h-12 object-contain mb-6 max-w-[200px]" />
+        ) : (
+          <div className="text-red font-bold text-3xl mb-6 tracking-tighter">{tenant?.tenant_name || 'LLYC'}</div>
+        )}
         <h2 className="text-2xl font-bold text-navy mb-2">Intelligence Dashboard 2026</h2>
         <p className="text-mid mb-8">Selecciona tu origen de datos para comenzar el análisis</p>
         
