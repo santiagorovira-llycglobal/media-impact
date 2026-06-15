@@ -133,9 +133,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-white">
-                    {signingIn ? 'Autenticando...' : 'Superadmin LLYC'}
+                    {signingIn ? 'Autenticando...' : 'Admin'}
                   </h3>
-                  <p className="text-[11px] text-red/80 mt-0.5">Gestión global de inquilinos y llaves encriptadas</p>
+                  <p className="text-[11px] text-red/80 mt-0.5">Acceso exclusivo para consultores de LLYC</p>
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-red group-hover:text-white transition-colors" />
@@ -166,7 +166,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     type="text" 
                     value={workspaceId}
                     onChange={(e) => setWorkspaceId(e.target.value)}
-                    placeholder="ej: sanitas"
+                    placeholder="ej: mi-organizacion"
                     required
                     className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-red transition-colors font-semibold"
                   />
