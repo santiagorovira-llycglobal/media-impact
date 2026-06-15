@@ -32,10 +32,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [secretType, setSecretType] = useState('brandlight-key');
   const [secretValue, setSecretValue] = useState('');
   const [showSecretModal, setShowSecretModal] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
     ? 'http://localhost:8080' 
     : '';
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0] || !editingTenant) return;
+    const file = e.target.files[0];
+    
+    // Si es un nuevo cliente, se necesita que escriban primero el Tenant ID para guardarlo con ese nombre
+    if (!editingTenant.tenant_id) {
+      alert("Por favor, escribe primero el ID del Cliente (Tenant ID) para poder asociarle el archivo de logotipo.");
+      return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      setUploadingLogo(true);
+      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants/${editingTenant.tenant_id}/logo`, {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+      if (res.ok && result.logo_url) {
+        setEditingTenant({ ...editingTenant, logo_url: result.logo_url });
+        alert("¡Logotipo subido y guardado con éxito en Google Cloud Storage!");
+      } else {
+        throw new Error(result.detail || "Error al subir el logotipo");
+      }
+    } catch (err: any) {
+      alert("Fallo al subir el logo: " + err.message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
 
   const fetchTenants = async () => {
     try {
@@ -313,15 +347,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-mid mb-1">URL del Logotipo (SVG preferiblemente)</label>
-                <input 
-                  type="url" 
-                  value={editingTenant.logo_url}
-                  onChange={(e) => setEditingTenant({ ...editingTenant, logo_url: e.target.value })}
-                  placeholder="https://upload.wikimedia.org/.../Sanitas_Logo.svg"
-                  required
-                  className="w-full bg-navy-light/10 border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white focus:outline-none focus:border-red transition-colors"
-                />
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-mid mb-1">Logotipo del Cliente (SVG o PNG)</label>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={editingTenant.logo_url}
+                      onChange={(e) => setEditingTenant({ ...editingTenant, logo_url: e.target.value })}
+                      placeholder="Escribe la URL del logo o sube un archivo..."
+                      required
+                      className="flex-1 bg-navy-light/10 border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white focus:outline-none focus:border-red transition-colors"
+                    />
+                    <label className="px-4 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-bold rounded-lg cursor-pointer flex items-center justify-center min-w-[120px] transition-colors">
+                      {uploadingLogo ? 'Subiendo...' : 'Subir Archivo'}
+                      <input 
+                        type="file" 
+                        accept=".svg,.png" 
+                        onChange={handleLogoUpload} 
+                        className="hidden" 
+                        disabled={uploadingLogo} 
+                      />
+                    </label>
+                  </div>
+                  {editingTenant.logo_url && (
+                    <div className="p-3 bg-white/5 rounded-lg border border-white/5 flex items-center justify-between gap-4">
+                      <span className="text-[10px] text-mid truncate max-w-[250px] font-mono">{editingTenant.logo_url}</span>
+                      <img src={editingTenant.logo_url} alt="Vista previa" className="h-6 max-w-[60px] object-contain bg-white/5 p-0.5 rounded" />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

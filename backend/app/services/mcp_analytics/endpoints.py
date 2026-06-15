@@ -998,3 +998,58 @@ async def save_tenant_secret_admin(
     except Exception as e:
         logger.error(f"Error al guardar secreto de tenant en admin: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/admin/tenants/{tenant_id}/logo", response_model=Dict[str, Any])
+async def upload_tenant_logo_admin(
+    tenant_id: str,
+    file: UploadFile = File(...),
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Sube un archivo de logotipo (SVG o PNG) corporativo de un cliente directamente
+    a un bucket de Google Cloud Storage (GCS) y devuelve su URL CDN pública (Solo Superadmin LLYC).
+    """
+    try:
+        from app.services.mcp_analytics.gcs_service import GCSService
+        gcs = GCSService()
+        
+        tenant_id_clean = tenant_id.lower().strip()
+        content_type = file.content_type or "image/svg+xml"
+        
+        # Validar tipo de archivo permitido (SVG o PNG)
+        if "svg" not in content_type and "png" not in content_type:
+            raise HTTPException(
+                status_code=400,
+                detail="Formato de archivo no permitido: Sólo se admiten archivos SVG (.svg) o PNG (.png)"
+            )
+            
+        file_content = await file.read()
+        
+        # Subir el logotipo a Google Cloud Storage
+        public_url = gcs.upload_logo(
+            tenant_id=tenant_id_clean,
+            file_content=file_content,
+            content_type=content_type
+        )
+        
+        if not public_url:
+            raise Exception("Error al subir el logotipo a Google Cloud Storage.")
+            
+        # Si Firestore está disponible, actualizar de forma automática el logo_url del tenant
+        from app.services.auth_utils import TokenManager
+        tm = TokenManager()
+        if tm.db:
+            tm.db.collection("tenants").document(tenant_id_clean).update({"logo_url": public_url})
+            logger.info(f"Firestore actualizado con la nueva logo_url de GCS para el tenant '{tenant_id_clean}'.")
+            
+        return {
+            "status": "success",
+            "message": f"Logotipo subido y enlazado con éxito para el tenant '{tenant_id_clean}'.",
+            "logo_url": public_url
+        }
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error al subir logotipo de tenant en admin: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
