@@ -156,7 +156,9 @@ class MCPETLService:
                         "total_sessions": int(r.get("sessions", 0)),
                         "ai_referred_sessions": 0,
                         "ai_inferred_sessions": 0,
-                        "engagement_score": float(r.get("conversions", 0))
+                        "engagement_score": float(r.get("conversions", 0)),
+                        "company_id": "ga4-account",
+                        "property_id": "properties/default"
                     })
                 results["ga4"] = f"success ({len(res.rows)} filas)"
             except Exception as e:
@@ -170,10 +172,13 @@ class MCPETLService:
                 parsed_creds = self._parse_credentials("adobe-creds", adobe_creds_raw)
                 adobe_service = AdobeAnalyticsService(credentials=parsed_creds)
                 
-                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}'...")
+                chosen_company = parsed_creds.get("company_id") or "adobe-company-default"
+                chosen_property = parsed_creds.get("property_id") or "default"
+                
+                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}' (Suite: {chosen_property})...")
                 # Crear petición estructurada de reporte para el ETL
                 req = RunReportRequest(
-                    property_id="default",  # Adobe Analytics resolverá el primer Report Suite disponible
+                    property_id=chosen_property,
                     date_ranges=[{"start_date": date_from, "end_date": date_to}],
                     dimensions=["date"],
                     metrics=["activeUsers", "sessions", "conversions"]
@@ -200,7 +205,9 @@ class MCPETLService:
                         "total_sessions": int(r.get("sessions", 0)),
                         "ai_referred_sessions": 0,
                         "ai_inferred_sessions": 0,
-                        "engagement_score": float(r.get("conversions", 0))
+                        "engagement_score": float(r.get("conversions", 0)),
+                        "company_id": chosen_company,
+                        "property_id": chosen_property
                     })
                     
                 traffic_rows.extend(actual_rows)
@@ -236,7 +243,9 @@ class MCPETLService:
                         "total_sessions": 0,
                         "ai_referred_sessions": int(float(r.get("ai_referred", 0))),
                         "ai_inferred_sessions": int(float(r.get("ai_inferred", 0))),
-                        "engagement_score": float(r.get("sentiment_score", 0))
+                        "engagement_score": float(r.get("sentiment_score", 0)),
+                        "company_id": "peec-account",
+                        "property_id": "properties/peec-default"
                     })
                 results["peec"] = f"success ({len(res.rows)} filas)"
             except Exception as e:
@@ -267,7 +276,9 @@ class MCPETLService:
                         "domain": r.get("domain"),
                         "visibility_score": float(r.get("visibility_score", 0)),
                         "sentiment_score": float(r.get("sentiment_score", 0)),
-                        "share_of_voice": float(r.get("share_of_voice", 0))
+                        "share_of_voice": float(r.get("share_of_voice", 0)),
+                        "company_id": "brandlight-company",
+                        "property_id": "properties/ES"
                     })
                 results["brandlight"] = f"success ({len(res.rows)} filas)"
             except Exception as e:

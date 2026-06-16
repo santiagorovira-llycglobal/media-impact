@@ -62,6 +62,8 @@ class BigQueryService:
                     bigquery.SchemaField("ai_referred_sessions", "INTEGER", mode="NULLABLE"),
                     bigquery.SchemaField("ai_inferred_sessions", "INTEGER", mode="NULLABLE"),
                     bigquery.SchemaField("engagement_score", "FLOAT", mode="NULLABLE"),
+                    bigquery.SchemaField("company_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("property_id", "STRING", mode="NULLABLE"),
                 ],
                 "fact_ai_visibility": [
                     bigquery.SchemaField("tenant_id", "STRING", mode="REQUIRED"),
@@ -70,6 +72,8 @@ class BigQueryService:
                     bigquery.SchemaField("visibility_score", "FLOAT", mode="NULLABLE"),
                     bigquery.SchemaField("sentiment_score", "FLOAT", mode="NULLABLE"),
                     bigquery.SchemaField("share_of_voice", "FLOAT", mode="NULLABLE"),
+                    bigquery.SchemaField("company_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("property_id", "STRING", mode="NULLABLE"),
                 ],
                 "dim_content_recommendations": [
                     bigquery.SchemaField("tenant_id", "STRING", mode="REQUIRED"),
@@ -81,22 +85,37 @@ class BigQueryService:
                 ]
             }
 
-            # 3. Crear Tablas si no existen
+            # 3. Crear Tablas si no existen, o actualizar su esquema de forma segura si ya existen
             for table_name, schema in schemas.items():
                 table_ref = bigquery.TableReference(dataset_ref, table_name)
                 try:
-                    self.client.get_table(table_ref)
-                    logger.info(f"La tabla '{table_name}' ya existe en BigQuery.")
-                except Exception:
-                    logger.info(f"Creando tabla analítica '{table_name}'...")
-                    table = bigquery.Table(table_ref, schema=schema)
-                    # Configurar particionamiento por fecha para optimizar costos de consulta
-                    table.time_partitioning = bigquery.TimePartitioning(
-                        type_=bigquery.TimePartitioningType.DAY,
-                        field="date"
-                    )
-                    self.client.create_table(table, timeout=30)
-                    logger.info(f"✅ Tabla '{table_name}' creada con éxito con particionamiento diario.")
+                    table = self.client.get_table(table_ref)
+                    logger.info(f"La tabla '{table_name}' ya existe en BigQuery. Verificando integridad del esquema...")
+                    
+                    # Identificar columnas nuevas que falten en el esquema de producción
+                    existing_fields = {f.name for f in table.schema}
+                    fields_to_add = [f for f in schema if f.name not in existing_fields]
+                    
+                    if fields_to_add:
+                        logger.info(f"Actualizando esquema de '{table_name}' (agregando columnas: {[f.name for f in fields_to_add]})...")
+                        new_schema = list(table.schema) + fields_to_add
+                        table.schema = new_schema
+                        self.client.update_table(table, ["schema"])
+                        logger.info(f"✅ Esquema de '{table_name}' actualizado y migrado con éxito en BigQuery.")
+                except Exception as e:
+                    if "Not found" in str(e) or "not found" in str(e) or "404" in str(e):
+                        logger.info(f"Creando tabla analítica '{table_name}'...")
+                        table = bigquery.Table(table_ref, schema=schema)
+                        # Configurar particionamiento por fecha para optimizar costos de consulta
+                        table.time_partitioning = bigquery.TimePartitioning(
+                            type_=bigquery.TimePartitioningType.DAY,
+                            field="date"
+                        )
+                        self.client.create_table(table, timeout=30)
+                        logger.info(f"✅ Tabla '{table_name}' creada con éxito con particionamiento diario.")
+                    else:
+                        logger.error(f"Error al verificar/migrar la tabla '{table_name}': {e}")
+                        return False
 
             return True
         except Exception as e:
