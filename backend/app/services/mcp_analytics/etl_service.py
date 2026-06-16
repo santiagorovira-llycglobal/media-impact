@@ -182,7 +182,7 @@ class MCPETLService:
                 while curr <= d_end:
                     sim_rows.append({
                         "tenant_id": self.tenant_id,
-                        "date": curr.strftime("%Y%m%d"),
+                        "date": curr.strftime("%Y-%m-%d"),
                         "source": "adobe-analytics",
                         "medium": "referral",
                         "total_sessions": random.randint(120, 380),
