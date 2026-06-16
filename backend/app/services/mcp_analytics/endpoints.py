@@ -476,21 +476,38 @@ async def run_report(
             metrics = bq.query_dashboard_metrics(t_id, start_date, end_date)
             if metrics and metrics.get("has_data", False):
                 logger.info(f"Consumiendo datos reales desde Google BigQuery para el tenant '{t_id}'.")
-                # Formatear la respuesta simulando la estructura del reporte unificado
+                
+                # Mapear las filas diarias directamente para que el frontend pueda pintar los gráficos reales de evolución!
+                report_rows = []
+                for r in metrics.get("daily_rows", []):
+                    report_rows.append({
+                        "date": r["date"],
+                        "sessions": str(r["sessions"]),
+                        "ai_referred": str(r["ai_referred"]),
+                        "ai_inferred": str(r["ai_inferred"]),
+                        "conversions": str(r["engagement_score"]),
+                        "visibility_score": str(metrics["visibility_score"]),
+                        "sentiment_score": str(metrics["sentiment_score"])
+                    })
+                
+                # Si no hay filas de tráfico diario pero sí de visibilidad, insertamos una agregada para el periodo
+                if not report_rows:
+                    report_rows.append({
+                        "date": datetime.utcnow().strftime("%Y-%m-%d"),
+                        "sessions": "0",
+                        "ai_referred": "0",
+                        "ai_inferred": "0",
+                        "conversions": "0",
+                        "visibility_score": str(metrics["visibility_score"]),
+                        "sentiment_score": str(metrics["sentiment_score"])
+                    })
+                    
                 return RunReportResponse(
                     property_id=request.property_id or "bigquery-fact",
                     dimension_headers=["date"],
                     metric_headers=["sessions", "ai_referred", "ai_inferred", "engagement_score", "visibility_score", "sentiment_score"],
-                    rows=[{
-                        "date": datetime.utcnow().strftime("%Y%m%d"),
-                        "sessions": str(metrics["total_sessions"]),
-                        "ai_referred": str(metrics["ai_referred"]),
-                        "ai_inferred": str(metrics["ai_inferred"]),
-                        "conversions": str(metrics["engagement_score"]),
-                        "visibility_score": str(metrics["visibility_score"]),
-                        "sentiment_score": str(metrics["sentiment_score"])
-                    }],
-                    row_count=1
+                    rows=report_rows,
+                    row_count=len(report_rows)
                 )
         except Exception as bqe:
             logger.warning(f"No se pudo consultar BigQuery para {t_id}, procediendo con fallback tradicional: {bqe}")

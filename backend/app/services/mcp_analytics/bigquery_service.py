@@ -265,9 +265,10 @@ class BigQueryService:
             return {}
 
         try:
-            # 1. Query para Tráfico (fact_traffic_evolution)
+            # 1. Query para Tráfico diario (fact_traffic_evolution)
             query_traffic = f"""
                 SELECT 
+                    date,
                     SUM(total_sessions) as total_sessions,
                     SUM(ai_referred_sessions) as ai_referred,
                     SUM(ai_inferred_sessions) as ai_inferred,
@@ -275,6 +276,8 @@ class BigQueryService:
                 FROM `{self.project_id}.{self.dataset_id}.fact_traffic_evolution`
                 WHERE tenant_id = @tenant_id 
                   AND date BETWEEN @start_date AND @end_date
+                GROUP BY date
+                ORDER BY date ASC
             """
             
             # 2. Query para Visibilidad (fact_ai_visibility)
@@ -295,9 +298,8 @@ class BigQueryService:
                 ]
             )
             
-            # Ejecutar consulta de tráfico
-            traffic_job = self.client.query(query_traffic, job_config=job_config)
-            traffic_results = traffic_job.result()
+            # Ejecutar consulta de tráfico diario
+            traffic_results = list(self.client.query(query_traffic, job_config=job_config).result())
             
             metrics = {
                 "total_sessions": 0,
@@ -306,20 +308,47 @@ class BigQueryService:
                 "engagement_score": 0,
                 "visibility_score": 0,
                 "sentiment_score": 0,
-                "has_data": False
+                "has_data": False,
+                "daily_rows": []
             }
+            
+            total_sessions = 0
+            total_ai_referred = 0
+            total_ai_inferred = 0
+            engagement_sum = 0
+            traffic_count = 0
             
             for row in traffic_results:
                 if row.total_sessions is not None:
-                    metrics["total_sessions"] = row.total_sessions
-                    metrics["ai_referred"] = row.ai_referred or 0
-                    metrics["ai_inferred"] = row.ai_inferred or 0
-                    metrics["engagement_score"] = round(row.engagement_score or 0, 1)
+                    row_sessions = row.total_sessions
+                    row_referred = row.ai_referred or 0
+                    row_inferred = row.ai_inferred or 0
+                    row_eng = row.engagement_score or 0
+                    
+                    total_sessions += row_sessions
+                    total_ai_referred += row_referred
+                    total_ai_inferred += row_inferred
+                    engagement_sum += row_eng
+                    traffic_count += 1
+                    
+                    metrics["daily_rows"].append({
+                        "date": row.date.strftime("%Y-%m-%d") if hasattr(row.date, "strftime") else str(row.date),
+                        "sessions": row_sessions,
+                        "ai_referred": row_referred,
+                        "ai_inferred": row_inferred,
+                        "engagement_score": round(row_eng, 1)
+                    })
                     metrics["has_data"] = True
+                    
+            if traffic_count > 0:
+                metrics["total_sessions"] = total_sessions
+                metrics["ai_referred"] = total_ai_referred
+                metrics["ai_inferred"] = total_ai_inferred
+                metrics["engagement_score"] = round(engagement_sum / traffic_count, 1)
                     
             # Ejecutar consulta de visibilidad
             visibility_job = self.client.query(query_visibility, job_config=job_config)
-            visibility_results = visibility_job.result()
+            visibility_results = list(visibility_job.result())
             
             for row in visibility_results:
                 if row.visibility_score is not None:

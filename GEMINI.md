@@ -133,6 +133,13 @@ Cuando se trabaje con herramientas de **Google Cloud Platform (gcloud CLI)** o s
   gh run view <run-id> --log --job=<job-id>
   ```
 
+### Paso 4: Definición de Logs del Sistema (Mandatorio)
+* **Definición de Logs del Sistema**: Cuando el usuario mencione "logs" o "bitácoras", se asume obligatoriamente que se refiere a los logs de **Google Cloud Platform (GCP)** (Cloud Logging o revisiones de Cloud Run) y nunca a archivos locales de texto `.log`.
+* Para consultar los logs remotos en vivo del backend desplegado en Cloud Run, se debe utilizar:
+  ```bash
+  gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"llyc-intelligence-api\"" --limit=30 --format="value(textPayload)"
+  ```
+
 ---
 
 ## 🔒 6. Políticas de Seguridad y Secretos

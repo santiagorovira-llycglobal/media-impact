@@ -170,74 +170,45 @@ class MCPETLService:
                 parsed_creds = self._parse_credentials("adobe-creds", adobe_creds_raw)
                 adobe_service = AdobeAnalyticsService(credentials=parsed_creds)
                 
-                # Verificar si son credenciales de prueba o reales
-                is_test_mode = parsed_creds.get("client_id") == "adobe-temp" or parsed_creds.get("client_secret") == "adobe-temp"
+                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}'...")
+                # Crear petición estructurada de reporte para el ETL
+                req = RunReportRequest(
+                    property_id="default",  # Adobe Analytics resolverá el primer Report Suite disponible
+                    date_ranges=[{"start_date": date_from, "end_date": date_to}],
+                    dimensions=["date"],
+                    metrics=["activeUsers", "sessions", "conversions"]
+                )
+                res = await adobe_service.run_report(req)
                 
-                if not is_test_mode:
-                    logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}'...")
-                    # Crear petición estructurada de reporte para el ETL
-                    req = RunReportRequest(
-                        property_id="default",  # Adobe Analytics resolverá el primer Report Suite disponible
-                        date_ranges=[{"start_date": date_from, "end_date": date_to}],
-                        dimensions=["date"],
-                        metrics=["activeUsers", "sessions", "conversions"]
-                    )
-                    res = await adobe_service.run_report(req)
-                    
-                    actual_rows = []
-                    for r in res.rows:
-                        raw_date = r.get("date")
-                        if raw_date:
-                            clean_date = raw_date.replace("-", "")
-                            if len(clean_date) == 8:
-                                date_str = f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:]}"
-                            else:
-                                date_str = raw_date
+                actual_rows = []
+                for r in res.rows:
+                    raw_date = r.get("date")
+                    if raw_date:
+                        clean_date = raw_date.replace("-", "")
+                        if len(clean_date) == 8:
+                            date_str = f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:]}"
                         else:
-                            date_str = datetime.utcnow().strftime("%Y-%m-%d")
-                            
-                        actual_rows.append({
-                            "tenant_id": self.tenant_id,
-                            "date": date_str,
-                            "source": "adobe-analytics",
-                            "medium": "organic-search",
-                            "total_sessions": int(r.get("sessions", 0)),
-                            "ai_referred_sessions": 0,
-                            "ai_inferred_sessions": 0,
-                            "engagement_score": float(r.get("conversions", 0))
-                        })
+                            date_str = raw_date
+                    else:
+                        date_str = datetime.utcnow().strftime("%Y-%m-%d")
                         
-                    traffic_rows.extend(actual_rows)
-                    results["adobe"] = f"success ({len(actual_rows)} filas reales importadas)"
+                    actual_rows.append({
+                        "tenant_id": self.tenant_id,
+                        "date": date_str,
+                        "source": "adobe-analytics",
+                        "medium": "organic-search",
+                        "total_sessions": int(r.get("sessions", 0)),
+                        "ai_referred_sessions": 0,
+                        "ai_inferred_sessions": 0,
+                        "engagement_score": float(r.get("conversions", 0))
+                    })
                     
-                else:
-                    # Simular la transformación e inyección robusta para cuentas de prueba (adobe-temp)
-                    from datetime import datetime, timedelta
-                    import random
-                    
-                    d_start = datetime.strptime(date_from, "%Y-%m-%d")
-                    d_end = datetime.strptime(date_to, "%Y-%m-%d")
-                    curr = d_start
-                    sim_rows = []
-                    
-                    while curr <= d_end:
-                        sim_rows.append({
-                            "tenant_id": self.tenant_id,
-                            "date": curr.strftime("%Y-%m-%d"),
-                            "source": "adobe-analytics",
-                            "medium": "referral",
-                            "total_sessions": random.randint(120, 380),
-                            "ai_referred_sessions": random.randint(15, 45),
-                            "ai_inferred_sessions": random.randint(25, 75),
-                            "engagement_score": round(random.uniform(55, 88), 1)
-                        })
-                        curr += timedelta(days=1)
-                    
-                    traffic_rows.extend(sim_rows)
-                    results["adobe"] = f"success ({len(sim_rows)} filas registradas)"
+                traffic_rows.extend(actual_rows)
+                results["adobe"] = f"success ({len(actual_rows)} filas reales importadas)"
             except Exception as e:
                 logger.error(f"Error en extracción de Adobe: {e}")
                 results["adobe"] = f"error: {str(e)}"
+                raise e
 
         # ==========================================
         # 🤖 EXTRACT & TRANSFORM: Peec.ai (Tráfico de IA)

@@ -197,16 +197,8 @@ class BrandlightService(AnalyticsService):
                 })
                 
         except Exception as e:
-            logger.warning(f"No se pudo consultar la API de Brandlight (generando datos simulados consistentes): {e}")
-            # Generar datos simulados de tendencia consistentes con Sanitas si falla la conexión
-            dates_list = [(datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7, 0, -1)]
-            for d in dates_list:
-                rows.append({
-                    "date": d,
-                    "domain": brand_name,
-                    "visibility_score": str(68 if brand_name == "sanitas" else 55),
-                    "sentiment_score": "7.8"
-                })
+            logger.error(f"Error consultando la API de Brandlight: {e}")
+            raise e
         
         return RunReportResponse(
             property_id=request.property_id,
