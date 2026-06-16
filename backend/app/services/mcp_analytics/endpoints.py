@@ -1088,6 +1088,7 @@ async def run_historical_backfill_task(tenant_id: str):
     """
     try:
         logger.info(f"🚀 Iniciando Backfill Histórico asíncrono (90 días) para '{tenant_id}'...")
+        from datetime import datetime, timedelta
         from app.services.mcp_analytics.secret_manager_service import SecretManagerService
         from app.services.mcp_analytics.etl_service import MCPETLService
         

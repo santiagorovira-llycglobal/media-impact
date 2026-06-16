@@ -349,6 +349,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
     }
   };
 
+  const triggerDirectRedeploy = async (tenantId: string) => {
+    try {
+      setRedeploying(true);
+      setMessage({
+        type: 'success',
+        text: `Iniciando re-despliegue de ETL y backfill histórico de 90 días para el cliente '${tenantId}'...`
+      });
+      
+      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants/${tenantId}/redeploy-etl`, {
+        method: 'POST'
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setMessage({
+          type: 'success',
+          text: data.message || `Infraestructura ETL de '${tenantId}' re-desplegada con éxito. Se re-creó el Cloud Scheduler y se encoló el backfill histórico.`
+        });
+        fetchEtlData(); // Refrescar historial automáticamente
+      } else {
+        throw new Error(`Error al re-desplegar la infraestructura ETL para '${tenantId}'`);
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Error al re-desplegar la ETL' });
+    } finally {
+      setRedeploying(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-navy text-white font-sans flex flex-col">
       {/* HEADER DE ADMÍN */}
@@ -582,7 +611,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
                     <div key={t.tenant_id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-4">
                       <div>
                         <h3 className="font-black text-xs uppercase tracking-wider text-white">{t.tenant_name}</h3>
-                        <span className="text-[9px] text-mid">ID: {t.tenant_id}</span>
+                        <span className="text-[9px] text-mid mb-2 block">ID: {t.tenant_id}</span>
+                        <button
+                          type="button"
+                          onClick={() => triggerDirectRedeploy(t.tenant_id)}
+                          disabled={redeploying}
+                          className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-navy border border-amber-500/20 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-2.5 h-2.5 ${redeploying ? 'animate-spin' : ''}`} />
+                          {redeploying ? 'Re-desplegando...' : 'Re-desplegar ETL'}
+                        </button>
                       </div>
                       <div className="flex gap-1.5 flex-wrap justify-end">
                         <span className={`px-2 py-1 rounded text-[9px] font-bold uppercase ${
