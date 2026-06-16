@@ -194,6 +194,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
     fetchTenants();
   }, []);
 
+  // Polling automático en segundo plano para actualizar el estado del despliegue en tiempo real
+  useEffect(() => {
+    const hasActiveDeployment = tenants.some(t => t.deployment_status?.status === 'deploying');
+    
+    if (hasActiveDeployment) {
+      const interval = setInterval(() => {
+        // Cargar silenciosamente en segundo plano sin disparar spinners intrusivos de carga de pantalla completa
+        fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants`)
+          .then(res => {
+            if (res.ok) return res.json();
+          })
+          .then(data => {
+            if (data) setTenants(data);
+          })
+          .catch(err => console.error("Error polling deployment status:", err));
+      }, 4000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [tenants]);
+
   const [activeTab, setActiveTab] = useState<'tenants' | 'etl'>('tenants');
   const [etlHistory, setEtlHistory] = useState<any[]>([]);
   const [etlAlerts, setEtlAlerts] = useState<any[]>([]);
