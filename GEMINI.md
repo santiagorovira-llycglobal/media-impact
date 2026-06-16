@@ -84,6 +84,10 @@ El proceso de desarrollo, confirmación y empuje de cambios debe seguir estricta
   git push origin <rama_actual>
   ```
 * Confirmar que el push fue exitoso ejecutando un `git status` final.
+* **Monitoreo Posterior al Push (Mandatorio)**: Inmediatamente después de realizar el push, se debe utilizar la CLI de GitHub (`gh`) para monitorear y trackear en tiempo real el progreso de la ejecución del workflow de GitHub Actions:
+  ```bash
+  gh run watch
+  ```
 
 ---
 

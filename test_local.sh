@@ -19,8 +19,9 @@ pip install -r requirements.txt --quiet
 
 if [ ! -f ".env" ]; then
     echo "⚠️ ADVERTENCIA: No se encontró el archivo backend/.env"
-    echo "Copiando plantilla base..."
-    printf "GCP_PROJECT_ID=llyc-adtech-pruebas\nGOOGLE_CLOUD_PROJECT=llyc-adtech-pruebas\nGEMINI_API_KEY=tu_api_key_aqui\n" > .env
+    echo "Copiando plantilla base dinámica..."
+    ACTIVE_PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
+    printf "GCP_PROJECT_ID=$ACTIVE_PROJECT\nGOOGLE_CLOUD_PROJECT=$ACTIVE_PROJECT\nGEMINI_API_KEY=tu_api_key_aqui\n" > .env
 fi
 
 # Iniciar backend en segundo plano
