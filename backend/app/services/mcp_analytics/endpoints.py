@@ -474,19 +474,21 @@ async def run_report(
                 end_date = datetime.utcnow().strftime("%Y-%m-%d")
                 
             metrics = bq.query_dashboard_metrics(t_id, start_date, end_date)
-            if metrics and metrics.get("total_sessions", 0) > 0:
+            if metrics and metrics.get("has_data", False):
                 logger.info(f"Consumiendo datos reales desde Google BigQuery para el tenant '{t_id}'.")
                 # Formatear la respuesta simulando la estructura del reporte unificado
                 return RunReportResponse(
                     property_id=request.property_id or "bigquery-fact",
                     dimension_headers=["date"],
-                    metric_headers=["sessions", "ai_referred", "ai_inferred", "engagement_score"],
+                    metric_headers=["sessions", "ai_referred", "ai_inferred", "engagement_score", "visibility_score", "sentiment_score"],
                     rows=[{
                         "date": datetime.utcnow().strftime("%Y%m%d"),
                         "sessions": str(metrics["total_sessions"]),
                         "ai_referred": str(metrics["ai_referred"]),
                         "ai_inferred": str(metrics["ai_inferred"]),
-                        "conversions": str(metrics["engagement_score"])
+                        "conversions": str(metrics["engagement_score"]),
+                        "visibility_score": str(metrics["visibility_score"]),
+                        "sentiment_score": str(metrics["sentiment_score"])
                     }],
                     row_count=1
                 )

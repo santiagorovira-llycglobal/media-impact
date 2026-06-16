@@ -258,14 +258,15 @@ class BigQueryService:
         """
         Realiza consultas estructuradas en BigQuery para consolidar las métricas clave
         y evolución de tráfico de un inquilino para pintar el Dashboard de forma ultrarrápida.
+        Soporta consolidación de tráfico y de visibilidad de marca de forma simultánea.
         """
         if not self.client:
             logger.warning("BigQuery Client no disponible. Retornando consulta vacía.")
             return {}
 
         try:
-            # Query parametrizada para evitar inyección SQL y optimizar el caché de BQ
-            query = f"""
+            # 1. Query para Tráfico (fact_traffic_evolution)
+            query_traffic = f"""
                 SELECT 
                     SUM(total_sessions) as total_sessions,
                     SUM(ai_referred_sessions) as ai_referred,
@@ -275,6 +276,17 @@ class BigQueryService:
                 WHERE tenant_id = @tenant_id 
                   AND date BETWEEN @start_date AND @end_date
             """
+            
+            # 2. Query para Visibilidad (fact_ai_visibility)
+            query_visibility = f"""
+                SELECT 
+                    AVG(visibility_score) as visibility_score,
+                    AVG(sentiment_score) as sentiment_score
+                FROM `{self.project_id}.{self.dataset_id}.fact_ai_visibility`
+                WHERE tenant_id = @tenant_id 
+                  AND date BETWEEN @start_date AND @end_date
+            """
+            
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ScalarQueryParameter("tenant_id", "STRING", tenant_id),
@@ -283,19 +295,39 @@ class BigQueryService:
                 ]
             )
             
-            query_job = self.client.query(query, job_config=job_config)
-            results = query_job.result() # Esperar a que la consulta termine
+            # Ejecutar consulta de tráfico
+            traffic_job = self.client.query(query_traffic, job_config=job_config)
+            traffic_results = traffic_job.result()
             
-            metrics = {}
-            for row in results:
-                metrics = {
-                    "total_sessions": row.total_sessions or 0,
-                    "ai_referred": row.ai_referred or 0,
-                    "ai_inferred": row.ai_inferred or 0,
-                    "engagement_score": round(row.engagement_score or 0, 1)
-                }
-                
-            logger.info(f"Métricas consolidadas de BigQuery para '{tenant_id}' recuperadas con éxito.")
+            metrics = {
+                "total_sessions": 0,
+                "ai_referred": 0,
+                "ai_inferred": 0,
+                "engagement_score": 0,
+                "visibility_score": 0,
+                "sentiment_score": 0,
+                "has_data": False
+            }
+            
+            for row in traffic_results:
+                if row.total_sessions is not None:
+                    metrics["total_sessions"] = row.total_sessions
+                    metrics["ai_referred"] = row.ai_referred or 0
+                    metrics["ai_inferred"] = row.ai_inferred or 0
+                    metrics["engagement_score"] = round(row.engagement_score or 0, 1)
+                    metrics["has_data"] = True
+                    
+            # Ejecutar consulta de visibilidad
+            visibility_job = self.client.query(query_visibility, job_config=job_config)
+            visibility_results = visibility_job.result()
+            
+            for row in visibility_results:
+                if row.visibility_score is not None:
+                    metrics["visibility_score"] = round(row.visibility_score, 1)
+                    metrics["sentiment_score"] = round(row.sentiment_score or 0, 1)
+                    metrics["has_data"] = True
+                    
+            logger.info(f"Métricas consolidadas de BigQuery para '{tenant_id}' (has_data={metrics['has_data']}) recuperadas con éxito.")
             return metrics
             
         except Exception as e:

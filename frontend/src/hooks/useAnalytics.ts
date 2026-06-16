@@ -50,7 +50,42 @@ export const useAnalytics = () => {
       }
 
       const result = await response.json();
-      setData(result);
+      
+      // Parsear la estructura de RunReportResponse a ApiResponse plano esperado por App.tsx
+      if (result && result.rows && result.rows.length > 0) {
+        let total_sessions = 0;
+        let ai_referred = 0;
+        let ai_inferred = 0;
+        let engagement_sum = 0;
+        let visibility_sum = 0;
+        let sentiment_sum = 0;
+        let count = result.rows.length;
+        
+        result.rows.forEach((row: any) => {
+          total_sessions += parseInt(row.sessions || row.total_sessions || '0', 10);
+          ai_referred += parseFloat(row.ai_referred || row.known_ia_sessions || '0');
+          ai_inferred += parseFloat(row.ai_inferred || row.inferred_ia_sessions || '0');
+          engagement_sum += parseFloat(row.engagement_score || row.conversions || '0');
+          visibility_sum += parseFloat(row.visibility_score || '0');
+          sentiment_sum += parseFloat(row.sentiment_score || '0');
+        });
+        
+        const mappedData: ApiResponse = {
+          total_sessions: total_sessions,
+          ai_referred: Math.round(ai_referred * 10) / 10,
+          ai_inferred: Math.round(ai_inferred * 10) / 10,
+          engagement_score: count > 0 ? Math.round(engagement_sum / count) : 0,
+          visibility_score: count > 0 ? Math.round((visibility_sum / count) * 10) / 10 : 0,
+          sentiment_score: count > 0 ? Math.round((sentiment_sum / count) * 10) / 10 : 0
+        };
+        
+        setData(mappedData);
+      } else if (result && typeof result.total_sessions !== 'undefined') {
+        // Fallback si la respuesta ya venía mapeada de forma plana
+        setData(result);
+      } else {
+        setData(null);
+      }
     } catch (err: any) {
       console.error("Fetch error:", err);
       setError(err.message);
