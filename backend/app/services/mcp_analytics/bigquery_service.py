@@ -64,6 +64,7 @@ class BigQueryService:
                     bigquery.SchemaField("engagement_score", "FLOAT", mode="NULLABLE"),
                     bigquery.SchemaField("company_id", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("property_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("segment_id", "STRING", mode="NULLABLE"),
                 ],
                 "fact_ai_visibility": [
                     bigquery.SchemaField("tenant_id", "STRING", mode="REQUIRED"),
@@ -74,6 +75,7 @@ class BigQueryService:
                     bigquery.SchemaField("share_of_voice", "FLOAT", mode="NULLABLE"),
                     bigquery.SchemaField("company_id", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("property_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("segment_id", "STRING", mode="NULLABLE"),
                 ],
                 "dim_content_recommendations": [
                     bigquery.SchemaField("tenant_id", "STRING", mode="REQUIRED"),
@@ -273,17 +275,20 @@ class BigQueryService:
             logger.error(f"Error al detectar huecos de datos para {tenant_id} en BigQuery: {e}")
             return {"first_date": None, "gaps": []}
 
-    def query_dashboard_metrics(self, tenant_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    def query_dashboard_metrics(self, tenant_id: str, start_date: str, end_date: str, segment_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Realiza consultas estructuradas en BigQuery para consolidar las métricas clave
         y evolución de tráfico de un inquilino para pintar el Dashboard de forma ultrarrápida.
-        Soporta consolidación de tráfico y de visibilidad de marca de forma simultánea.
+        Soporta consolidación de tráfico y de visibilidad de marca de forma simultánea, filtrable por segmento.
         """
         if not self.client:
             logger.warning("BigQuery Client no disponible. Retornando consulta vacía.")
             return {}
 
         try:
+            # Filtro opcional de segmento
+            segment_filter = "AND segment_id = @segment_id" if segment_id else ""
+            
             # 1. Query para Tráfico diario (fact_traffic_evolution)
             query_traffic = f"""
                 SELECT 
@@ -295,6 +300,7 @@ class BigQueryService:
                 FROM `{self.project_id}.{self.dataset_id}.fact_traffic_evolution`
                 WHERE tenant_id = @tenant_id 
                   AND date BETWEEN @start_date AND @end_date
+                  {segment_filter}
                 GROUP BY date
                 ORDER BY date ASC
             """
@@ -307,15 +313,18 @@ class BigQueryService:
                 FROM `{self.project_id}.{self.dataset_id}.fact_ai_visibility`
                 WHERE tenant_id = @tenant_id 
                   AND date BETWEEN @start_date AND @end_date
+                  {segment_filter}
             """
             
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("tenant_id", "STRING", tenant_id),
-                    bigquery.ScalarQueryParameter("start_date", "STRING", start_date),
-                    bigquery.ScalarQueryParameter("end_date", "STRING", end_date),
-                ]
-            )
+            params = [
+                bigquery.ScalarQueryParameter("tenant_id", "STRING", tenant_id),
+                bigquery.ScalarQueryParameter("start_date", "STRING", start_date),
+                bigquery.ScalarQueryParameter("end_date", "STRING", end_date),
+            ]
+            if segment_id:
+                params.append(bigquery.ScalarQueryParameter("segment_id", "STRING", segment_id))
+                
+            job_config = bigquery.QueryJobConfig(query_parameters=params)
             
             # Ejecutar consulta de tráfico diario
             traffic_results = list(self.client.query(query_traffic, job_config=job_config).result())

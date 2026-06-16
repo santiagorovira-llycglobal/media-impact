@@ -1201,7 +1201,7 @@ async def validate_adobe_credentials_admin(
 ):
     """
     Valida las credenciales ingresadas de Adobe Analytics conectando con el Discovery API
-    y retorna la lista de Compañías y Report Suites disponibles para su selección.
+    y retorna la lista de Compañías, Report Suites y Segmentos disponibles para su selección.
     """
     try:
         from app.services.mcp_analytics.adobe_service import AdobeAnalyticsService
@@ -1219,15 +1219,23 @@ async def validate_adobe_credentials_admin(
         
         # 2. Recuperar propiedades/report suites de la primera compañía por defecto
         suites_list = []
+        segments_list = []
         if companies_list:
             first_company_id = companies_list[0]["id"]
             properties = await service.list_properties(account_id=first_company_id)
             suites_list = [{"id": prop.property_id, "name": prop.display_name} for prop in properties]
             
+            # 3. Recuperar segmentos de la primera propiedad por defecto
+            if suites_list:
+                first_suite_id = suites_list[0]["id"]
+                segments = await service.list_segments(report_suite_id=first_suite_id)
+                segments_list = [{"id": seg.get("id"), "name": seg.get("name")} for seg in segments]
+            
         return {
             "status": "success",
             "companies": companies_list,
-            "suites": suites_list
+            "suites": suites_list,
+            "segments": segments_list
         }
     except Exception as e:
         logger.error(f"Error al validar credenciales de Adobe en admin: {e}")
@@ -1260,6 +1268,36 @@ async def validate_adobe_properties_admin(
         }
     except Exception as e:
         logger.error(f"Error al listar propiedades de Adobe en validación: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/admin/tenants/validate-adobe-segments", response_model=Dict[str, Any])
+async def validate_adobe_segments_admin(
+    client_id: str,
+    client_secret: str,
+    org_id: str,
+    company_id: str,
+    property_id: str,
+    user_email: str = Depends(get_current_admin)
+):
+    """
+    Retorna la lista de Segmentos disponibles para un Report Suite específico de Adobe.
+    """
+    try:
+        from app.services.mcp_analytics.adobe_service import AdobeAnalyticsService
+        service = AdobeAnalyticsService(credentials={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "org_id": org_id,
+            "company_id": company_id
+        })
+        segments = await service.list_segments(report_suite_id=property_id)
+        segments_list = [{"id": seg.get("id"), "name": seg.get("name")} for seg in segments]
+        return {
+            "status": "success",
+            "segments": segments_list
+        }
+    except Exception as e:
+        logger.error(f"Error al listar segmentos de Adobe en validación: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/admin/tenants/{tenant_id}/redeploy-etl", response_model=Dict[str, Any])

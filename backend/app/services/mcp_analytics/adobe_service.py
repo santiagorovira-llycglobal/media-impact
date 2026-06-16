@@ -282,18 +282,34 @@ class AdobeAnalyticsService(AnalyticsService):
             })
 
         headers = self._get_headers(token, content_type="application/json")
+        url = f"{self.base_url}/{company_id}/reports"
+        max_retries = 5
+        base_delay = 2.0
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/{company_id}/reports", headers=headers, json=adobe_req) as resp:
-                if resp.status != 200: raise Exception(f"Adobe API Error: {resp.status}")
-                data = await resp.json()
-                rows = []
-                for row in data.get("rows", []):
-                    p_row = {dim_key: row.get("value") or row.get("itemId", "(not set)")}
-                    m_values = row.get("data", [])
-                    for i, m_name in enumerate(request.metrics): p_row[m_name] = str(m_values[i]) if i < len(m_values) else "0"
-                    rows.append(p_row)
-                return RunReportResponse(property_id=rsid, dimension_headers=[dim_key], metric_headers=request.metrics, rows=rows, row_count=len(rows), metadata={"rsid": rsid})
+            for attempt in range(max_retries):
+                async with session.post(url, headers=headers, json=adobe_req) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        rows = []
+                        for row in data.get("rows", []):
+                            p_row = {dim_key: row.get("value") or row.get("itemId", "(not set)")}
+                            m_values = row.get("data", [])
+                            for i, m_name in enumerate(request.metrics): 
+                                p_row[m_name] = str(m_values[i]) if i < len(m_values) else "0"
+                            rows.append(p_row)
+                        return RunReportResponse(property_id=rsid, dimension_headers=[dim_key], metric_headers=request.metrics, rows=rows, row_count=len(rows), metadata={"rsid": rsid})
+                    
+                    elif resp.status == 429:
+                        import random
+                        delay = (base_delay * (2 ** attempt)) + random.uniform(0.5, 1.5)
+                        logger.warning(f"⚠️ Adobe API Rate Limit (429) detectado en intento {attempt+1}/{max_retries}. Durmiendo {delay:.2f}s antes de reintentar para dar respiro...")
+                        await asyncio.sleep(delay)
+                    
+                    else:
+                        raise Exception(f"Adobe API Error: {resp.status}")
+                        
+            raise Exception("Adobe: Límite de reintentos agotado tras recibir continuos códigos 429 (Too Many Requests).")
 
     async def get_metadata(self, property_id: str) -> Dict[str, Any]:
         return {"name": property_id, "provider": "adobe"}

@@ -174,14 +174,16 @@ class MCPETLService:
                 
                 chosen_company = parsed_creds.get("company_id") or "adobe-company-default"
                 chosen_property = parsed_creds.get("property_id") or "default"
+                chosen_segment = parsed_creds.get("segment_id") or "all-users"
                 
-                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}' (Suite: {chosen_property})...")
+                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}' (Suite: {chosen_property}, Segmento: {chosen_segment})...")
                 # Crear petición estructurada de reporte para el ETL
                 req = RunReportRequest(
                     property_id=chosen_property,
                     date_ranges=[{"start_date": date_from, "end_date": date_to}],
                     dimensions=["date"],
-                    metrics=["activeUsers", "sessions", "conversions"]
+                    metrics=["activeUsers", "sessions", "conversions"],
+                    segment_id=chosen_segment if chosen_segment != "all-users" else None
                 )
                 res = await adobe_service.run_report(req)
                 
@@ -207,7 +209,8 @@ class MCPETLService:
                         "ai_inferred_sessions": 0,
                         "engagement_score": float(r.get("conversions", 0)),
                         "company_id": chosen_company,
-                        "property_id": chosen_property
+                        "property_id": chosen_property,
+                        "segment_id": chosen_segment
                     })
                     
                 traffic_rows.extend(actual_rows)
