@@ -160,7 +160,16 @@ class AdobeAnalyticsService(AnalyticsService):
                         ims_orgs = data.get("imsOrgs") or data.get("orgs") or []
                         accounts = []
                         for org in ims_orgs:
-                            if self.org_id and org.get("imsOrgId") and org.get("imsOrgId") != self.org_id: continue
+                            org_ims_id = org.get("imsOrgId", "").lower().strip()
+                            self_org_id_clean = self.org_id.lower().strip() if self.org_id else ""
+                            
+                            # Comparación limpia y tolerante a fallos de formato del Org ID
+                            if self_org_id_clean and org_ims_id:
+                                org_ims_id_raw = org_ims_id.split("@")[0]
+                                self_org_id_raw = self_org_id_clean.split("@")[0]
+                                if org_ims_id_raw != self_org_id_raw:
+                                    continue
+                                    
                             org_name = org.get("imsOrgName") or org.get("orgName") or "Adobe Org"
                             companies = org.get("companies") or org.get("analyticsCompanies") or []
                             for company in companies:
@@ -168,6 +177,19 @@ class AdobeAnalyticsService(AnalyticsService):
                                 if g_id:
                                     c_name = company.get("companyName") or company.get("name") or g_id
                                     accounts.append(GAAccount(name=f"companies/{g_id}", display_name=f"{org_name} - {c_name}", account_id=g_id))
+                        
+                        # Fallback de Resiliencia: Si se filtró por Org ID y dio 0 resultados, 
+                        # reintentar sin filtrar para que el usuario no se quede bloqueado si hay diferencias de metadatos en Adobe
+                        if not accounts and self.org_id:
+                            logger.info("Discovery: 0 compañías encontradas con el filtro de Org ID. Reintentando sin filtrar para prevenir bloqueos...")
+                            for org in ims_orgs:
+                                org_name = org.get("imsOrgName") or org.get("orgName") or "Adobe Org"
+                                companies = org.get("companies") or org.get("analyticsCompanies") or []
+                                for company in companies:
+                                    g_id = company.get('globalCompanyId') or company.get('companyId') or company.get('id')
+                                    if g_id:
+                                        c_name = company.get("companyName") or company.get("name") or g_id
+                                        accounts.append(GAAccount(name=f"companies/{g_id}", display_name=f"{org_name} - {c_name}", account_id=g_id))
                         
                         # Cache the first company ID found to prevent future 429s during deep dives
                         if accounts and not self.company_id:

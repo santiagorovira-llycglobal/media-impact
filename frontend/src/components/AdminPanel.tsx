@@ -46,11 +46,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
   const [adobeOrgId, setAdobeOrgId] = useState('');
   const [adobeCompaniesList, setAdobeCompaniesList] = useState<any[]>([]);
   const [adobeSuitesList, setAdobeSuitesList] = useState<any[]>([]);
-  const [adobeSegmentsList, setAdobeSegmentsList] = useState<any[]>([]);
   const [validatingAdobe, setValidatingAdobe] = useState(false);
   const [selectedAdobeCompany, setSelectedAdobeCompany] = useState('');
   const [selectedAdobeSuite, setSelectedAdobeSuite] = useState('');
-  const [selectedAdobeSegment, setSelectedAdobeSegment] = useState('');
 
   // Estados para validación e inyección estructurada de GA4
   const [ga4AccountsList, setGa4AccountsList] = useState<any[]>([]);
@@ -278,8 +276,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
         client_secret: adobeClientSecret.trim(),
         org_id: adobeOrgId.trim(),
         company_id: selectedAdobeCompany || undefined,
-        property_id: selectedAdobeSuite || undefined,
-        segment_id: selectedAdobeSegment || undefined
+        property_id: selectedAdobeSuite || undefined
       });
     } else if (secretType === 'ga4-creds' && selectedGa4Property) {
       try {
@@ -348,10 +345,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
     setAdobeOrgId('');
     setAdobeCompaniesList([]);
     setAdobeSuitesList([]);
-    setAdobeSegmentsList([]);
     setSelectedAdobeCompany('');
     setSelectedAdobeSuite('');
-    setSelectedAdobeSegment('');
     setGa4AccountsList([]);
     setGa4PropertiesList([]);
     setSelectedGa4Account('');
@@ -452,7 +447,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
         const data = await res.json();
         setAdobeCompaniesList(data.companies || []);
         setAdobeSuitesList(data.suites || []);
-        setAdobeSegmentsList(data.segments || []);
         
         if (data.companies && data.companies.length > 0) {
           setSelectedAdobeCompany(data.companies[0].id);
@@ -460,13 +454,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
         if (data.suites && data.suites.length > 0) {
           setSelectedAdobeSuite(data.suites[0].id);
         }
-        if (data.segments && data.segments.length > 0) {
-          setSelectedAdobeSegment(data.segments[0].id);
-        }
         
         setMessage({
           type: 'success',
-          text: `Credenciales de Adobe validadas con éxito. Se encontraron ${data.companies?.length || 0} compañías, ${data.suites?.length || 0} report suites y ${data.segments?.length || 0} segmentos.`
+          text: `Credenciales de Adobe validadas con éxito. Se encontraron ${data.companies?.length || 0} compañías y ${data.suites?.length || 0} report suites.`
         });
       } else {
         const err = await res.json();
@@ -482,9 +473,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
   const handleAdobeCompanyChange = async (companyId: string) => {
     setSelectedAdobeCompany(companyId);
     setSelectedAdobeSuite('');
-    setSelectedAdobeSegment('');
     setAdobeSuitesList([]);
-    setAdobeSegmentsList([]);
     
     try {
       setValidatingAdobe(true);
@@ -497,43 +486,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
         if (suites.length > 0) {
           const firstSuite = suites[0].id;
           setSelectedAdobeSuite(firstSuite);
-          
-          // Cargar segmentos automáticamente para el primer suite
-          const segRes = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants/validate-adobe-segments?client_id=${encodeURIComponent(adobeClientId.trim())}&client_secret=${encodeURIComponent(adobeClientSecret.trim())}&org_id=${encodeURIComponent(adobeOrgId.trim())}&company_id=${encodeURIComponent(companyId)}&property_id=${encodeURIComponent(firstSuite)}`);
-          if (segRes.ok) {
-            const segData = await segRes.json();
-            setAdobeSegmentsList(segData.segments || []);
-            if (segData.segments && segData.segments.length > 0) {
-              setSelectedAdobeSegment(segData.segments[0].id);
-            }
-          }
         }
       }
     } catch (err: any) {
-      console.error("Error loading properties/segments for company:", err);
-    } finally {
-      setValidatingAdobe(false);
-    }
-  };
-
-  const handleAdobePropertyChange = async (suiteId: string) => {
-    setSelectedAdobeSuite(suiteId);
-    setSelectedAdobeSegment('');
-    setAdobeSegmentsList([]);
-    
-    try {
-      setValidatingAdobe(true);
-      const res = await fetch(`${API_BASE_URL}/api/v1/mcp-analytics/admin/tenants/validate-adobe-segments?client_id=${encodeURIComponent(adobeClientId.trim())}&client_secret=${encodeURIComponent(adobeClientSecret.trim())}&org_id=${encodeURIComponent(adobeOrgId.trim())}&company_id=${encodeURIComponent(selectedAdobeCompany)}&property_id=${encodeURIComponent(suiteId)}`);
-      
-      if (res.ok) {
-        const data = await res.json();
-        setAdobeSegmentsList(data.segments || []);
-        if (data.segments && data.segments.length > 0) {
-          setSelectedAdobeSegment(data.segments[0].id);
-        }
-      }
-    } catch (err: any) {
-      console.error("Error loading segments for property:", err);
+      console.error("Error loading properties for company:", err);
     } finally {
       setValidatingAdobe(false);
     }
@@ -1119,7 +1075,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
       {/* MODAL DE CLAVES API (GCP SECRET MANAGER) */}
       {showSecretModal && secretTenantId && (
         <div className="fixed inset-0 bg-navy/80 backdrop-blur-sm flex items-center justify-center p-5 z-[1000]">
-          <div className="bg-navy-light/20 border border-white/10 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+          <div className="bg-[#0b1b3d]/90 border border-white/10 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-6 border-b border-white/10 bg-white/[0.02] flex items-center gap-2">
               <Key className="w-5 h-5 text-amber-400" />
               <h3 className="font-black text-sm uppercase tracking-widest text-amber-400">
@@ -1127,7 +1083,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
               </h3>
             </div>
             
-            <form onSubmit={handleSaveSecret} className="p-6 space-y-4">
+            <form onSubmit={handleSaveSecret} className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
               <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-4 text-[11px] text-amber-300/80 leading-relaxed">
                 🛡️ **Seguridad Compliance**: Estas llaves serán guardadas y encriptadas de forma transparente y directa en **GCP Secret Manager** de producción. Nunca se almacenarán en bases de datos relacionales estándar en texto plano.
               </div>
@@ -1226,26 +1182,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onPreviewTenant 
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-mid mb-1 text-red">Report Suite (Propiedad para ETL)</label>
                           <select 
                             value={selectedAdobeSuite}
-                            onChange={(e) => handleAdobePropertyChange(e.target.value)}
+                            onChange={(e) => setSelectedAdobeSuite(e.target.value)}
                             className="w-full bg-[#0a1829] border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white focus:outline-none focus:border-red font-bold"
                           >
                             {adobeSuitesList.map(s => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {adobeSegmentsList.length > 0 && (
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-mid mb-1 text-amber-400">Segmento de Adobe (Opcional para ETL)</label>
-                          <select 
-                            value={selectedAdobeSegment}
-                            onChange={(e) => setSelectedAdobeSegment(e.target.value)}
-                            className="w-full bg-[#0a1829] border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white focus:outline-none focus:border-red font-bold"
-                          >
-                            <option value="all-users">Todos los usuarios (Sin filtro)</option>
-                            {adobeSegmentsList.map(s => (
                               <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>

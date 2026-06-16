@@ -174,47 +174,71 @@ class MCPETLService:
                 
                 chosen_company = parsed_creds.get("company_id") or "adobe-company-default"
                 chosen_property = parsed_creds.get("property_id") or "default"
-                chosen_segment = parsed_creds.get("segment_id") or "all-users"
                 
-                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}' (Suite: {chosen_property}, Segmento: {chosen_segment})...")
-                # Crear petición estructurada de reporte para el ETL
-                req = RunReportRequest(
-                    property_id=chosen_property,
-                    date_ranges=[{"start_date": date_from, "end_date": date_to}],
-                    dimensions=["date"],
-                    metrics=["activeUsers", "sessions", "conversions"],
-                    segment_id=chosen_segment if chosen_segment != "all-users" else None
-                )
-                res = await adobe_service.run_report(req)
+                logger.info(f"Conectando en vivo con la API de Adobe Analytics para el tenant '{self.tenant_id}' (Suite: {chosen_property})...")
+                
+                # 1. Obtener todos los segmentos disponibles para esta Report Suite
+                segments = []
+                try:
+                    segments = await adobe_service.list_segments(report_suite_id=chosen_property)
+                    logger.info(f"Se obtuvieron {len(segments)} segmentos disponibles para '{chosen_property}'.")
+                except Exception as se:
+                    logger.warning(f"No se pudieron cargar segmentos para '{chosen_property}' durante la ingesta: {se}")
+                
+                # 2. Configurar la lista de bucles de segmentos (Tráfico general + cada segmento)
+                segment_loops = [{"id": "all-users", "name": "Todos los usuarios"}]
+                if segments:
+                    segment_loops.extend([{"id": s["id"], "name": s["name"]} for s in segments])
+                
+                logger.info(f"Iniciando ingesta analítica segmentada para {len(segment_loops)} variantes...")
                 
                 actual_rows = []
-                for r in res.rows:
-                    raw_date = r.get("date")
-                    if raw_date:
-                        clean_date = raw_date.replace("-", "")
-                        if len(clean_date) == 8:
-                            date_str = f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:]}"
-                        else:
-                            date_str = raw_date
-                    else:
-                        date_str = datetime.utcnow().strftime("%Y-%m-%d")
-                        
-                    actual_rows.append({
-                        "tenant_id": self.tenant_id,
-                        "date": date_str,
-                        "source": "adobe-analytics",
-                        "medium": "organic-search",
-                        "total_sessions": int(r.get("sessions", 0)),
-                        "ai_referred_sessions": 0,
-                        "ai_inferred_sessions": 0,
-                        "engagement_score": float(r.get("conversions", 0)),
-                        "company_id": chosen_company,
-                        "property_id": chosen_property,
-                        "segment_id": chosen_segment
-                    })
+                for seg in segment_loops:
+                    seg_id = seg["id"]
+                    logger.info(f"Ejecutando ETL Adobe para segmento: '{seg['name']}' ({seg_id})...")
+                    
+                    # Crear petición estructurada de reporte filtrada por este segmento
+                    req = RunReportRequest(
+                        property_id=chosen_property,
+                        date_ranges=[{"start_date": date_from, "end_date": date_to}],
+                        dimensions=["date"],
+                        metrics=["activeUsers", "sessions", "conversions"],
+                        segment_id=seg_id if seg_id != "all-users" else None
+                    )
+                    
+                    try:
+                        res = await adobe_service.run_report(req)
+                        for r in res.rows:
+                            raw_date = r.get("date")
+                            if raw_date:
+                                clean_date = raw_date.replace("-", "")
+                                if len(clean_date) == 8:
+                                    date_str = f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:]}"
+                                else:
+                                    date_str = raw_date
+                            else:
+                                date_str = datetime.utcnow().strftime("%Y-%m-%d")
+                                
+                            actual_rows.append({
+                                "tenant_id": self.tenant_id,
+                                "date": date_str,
+                                "source": "adobe-analytics",
+                                "medium": "organic-search",
+                                "total_sessions": int(r.get("sessions", 0)),
+                                "ai_referred_sessions": 0,
+                                "ai_inferred_sessions": 0,
+                                "engagement_score": float(r.get("conversions", 0)),
+                                "company_id": chosen_company,
+                                "property_id": chosen_property,
+                                "segment_id": seg_id
+                            })
+                    except Exception as ere:
+                        logger.error(f"Error extrayendo datos de Adobe para el segmento '{seg['name']}': {ere}")
+                        # Continuar con el siguiente segmento para no detener toda la ETL de los demás segmentos
+                        continue
                     
                 traffic_rows.extend(actual_rows)
-                results["adobe"] = f"success ({len(actual_rows)} filas reales importadas)"
+                results["adobe"] = f"success ({len(actual_rows)} filas reales importadas para {len(segment_loops)} segmentos)"
             except Exception as e:
                 logger.error(f"Error en extracción de Adobe: {e}")
                 results["adobe"] = f"error: {str(e)}"
