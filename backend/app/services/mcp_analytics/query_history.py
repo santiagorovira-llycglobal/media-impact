@@ -1,61 +1,42 @@
 """Servicio para gestionar el historial de consultas de la herramienta.
 
-Este servicio utiliza SQLite para almacenar de forma persistente las consultas 
+Este servicio utiliza Google Cloud Firestore para almacenar de forma persistente las consultas 
 realizadas por los usuarios, las respuestas generadas y metadata asociada 
 (cuenta, propiedad, tiempo de ejecución).
 """
 
-import sqlite3
-import json
-import logging
 import os
+import logging
+import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+import google.cloud.firestore as firestore
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 class QueryHistoryService:
-    def __init__(self, db_path: Optional[str] = None):
-        if db_path is None:
-            # Default path based on environment
-            if os.getenv("K_SERVICE") or os.getenv("ENVIRONMENT") == "production":
-                db_path = "/tmp/history.db"
-            else:
-                db_path = "database/history.db"
-        
-        self.db_path = db_path
-        self._init_db()
+    def __init__(self, db_path: Optional[str] = None, project_id: Optional[str] = None):
+        # Mantenemos db_path por compatibilidad de firmas, pero usamos Firestore
+        self.project_id = project_id or os.getenv("GCP_PROJECT_ID") or settings.GCP_PROJECT_ID
+        self._db = None
+        self.collection_name = "query_history"
 
-    def _init_db(self):
-        """Inicializa la base de datos y crea las tablas si no existen."""
-        # Asegurar que el directorio existe
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS query_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        user_email TEXT,
-                        account_id TEXT,
-                        property_id TEXT,
-                        query_text TEXT,
-                        response_summary TEXT,
-                        full_response_json TEXT,
-                        execution_time_ms INTEGER,
-                        status TEXT,
-                        error_message TEXT
-                    )
-                """)
-                # Índices para mejorar rendimiento de búsqueda
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_account ON query_history(account_id)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_property ON query_history(property_id)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON query_history(timestamp)")
-                conn.commit()
-        except sqlite3.Error as e:
-            logger.error(f"Error inicializando base de datos de historial: {e}")
+    @property
+    def db(self) -> firestore.Client:
+        """Inicializa de forma perezosa (lazy) el cliente de Firestore."""
+        if self._db is None:
+            try:
+                if self.project_id:
+                    self._db = firestore.Client(project=self.project_id)
+                    logger.info(f"Cliente Firestore de QueryHistoryService inicializado: {self.project_id}")
+                else:
+                    self._db = firestore.Client()
+                    logger.info("Cliente Firestore de QueryHistoryService inicializado de forma automática (autodetectado).")
+            except Exception as e:
+                logger.error(f"Error inicializando cliente Firestore en QueryHistoryService: {e}")
+                self._db = None
+        return self._db
 
     def log_query(
         self,
@@ -67,51 +48,55 @@ class QueryHistoryService:
         execution_time_ms: int = 0,
         status: str = "success",
         error_message: Optional[str] = None
-    ) -> int:
-        """Registra una nueva consulta en el historial."""
+    ) -> str:
+        """Registra una nueva consulta en el historial de Firestore."""
         
         response_summary = ""
-        full_response_json = "{}"
+        full_response_obj = {}
         
         if response_data:
-            # Intentar extraer un resumen amigable
             if isinstance(response_data, dict):
-                # Estrategia de extracción de resumen robusta
                 msg = response_data.get("message")
                 summary = response_data.get("summary")
                 
                 if msg:
                     response_summary = str(msg)
                 elif summary:
-                    # Si summary es un dict (estadisticas), convertir a string
                     response_summary = str(summary)
                 else:
                     response_summary = ""
                 
                 response_summary = response_summary[:500]
-                full_response_json = json.dumps(response_data)
+                full_response_obj = response_data
             else:
                 response_summary = str(response_data)[:500]
+                full_response_obj = {"response": response_data}
+
+        doc_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_email": user_email.lower().strip() if user_email else "",
+            "account_id": account_id,
+            "property_id": property_id,
+            "query_text": query_text,
+            "response_summary": response_summary,
+            "full_response_json": full_response_obj,  # Guardamos como objeto estructurado de Firestore
+            "execution_time_ms": execution_time_ms,
+            "status": status,
+            "error_message": error_message
+        }
+
+        if self.db is None:
+            logger.warning(f"[FALLBACK] No hay cliente Firestore. Ignorando log_query de {user_email} (desarrollo local).")
+            return "mock-id-local"
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO query_history (
-                        user_email, account_id, property_id, query_text, 
-                        response_summary, full_response_json, execution_time_ms, 
-                        status, error_message
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    user_email, account_id, property_id, query_text,
-                    response_summary, full_response_json, execution_time_ms,
-                    status, error_message
-                ))
-                conn.commit()
-                return cursor.lastrowid
-        except sqlite3.Error as e:
-            logger.error(f"Error guardando consulta en historial: {e}")
-            return -1
+            # Firestore genera automáticamente un ID de documento único
+            _, doc_ref = self.db.collection(self.collection_name).add(doc_data)
+            logger.info(f"✅ Query logged to Firestore: {doc_ref.id} for {user_email}")
+            return doc_ref.id
+        except Exception as e:
+            logger.error(f"Error guardando consulta en el historial de Firestore: {e}")
+            return ""
 
     def get_history(
         self,
@@ -121,64 +106,90 @@ class QueryHistoryService:
         limit: int = 50,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """Recupera el historial filtrado."""
+        """Recupera el historial filtrado desde Firestore."""
         
-        query = "SELECT * FROM query_history WHERE 1=1"
-        params = []
-        
-        if account_id:
-            query += " AND account_id = ?"
-            params.append(account_id)
-        if property_id:
-            query += " AND property_id = ?"
-            params.append(property_id)
-        if user_email:
-            query += " AND user_email = ?"
-            params.append(user_email)
-            
-        query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+        if self.db is None:
+            logger.warning(f"[FALLBACK] No hay cliente Firestore. No se pudo recuperar el historial (desarrollo local).")
+            return []
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
+            collection_ref = self.db.collection(self.collection_name)
+            query = collection_ref
+            
+            # Aplicar filtros
+            if account_id:
+                query = query.where("account_id", "==", account_id)
+            if property_id:
+                query = query.where("property_id", "==", property_id)
+            if user_email:
+                query = query.where("user_email", "==", user_email.lower().strip())
                 
-                result = []
-                for row in rows:
-                    item = dict(row)
-                    # Parsear el JSON de vuelta para la respuesta completa
-                    try:
-                        item["full_response_json"] = json.loads(item["full_response_json"])
-                    except:
-                        pass
-                    result.append(item)
-                return result
-        except sqlite3.Error as e:
-            logger.error(f"Error recuperando historial: {e}")
+            # Ordenar por tiempo (descendiente) y paginar
+            query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
+            
+            # offset manual para compatibilidad con firmas
+            if offset > 0:
+                # Nota: offset directo en Firestore se hace mejor mediante cursors,
+                # pero para compatibilidad de firma con SQLite, usamos el offset directo de la API
+                query = query.offset(offset)
+                
+            query = query.limit(limit)
+            
+            docs = query.stream()
+            result = []
+            for doc in docs:
+                item = doc.to_dict()
+                item["id"] = doc.id
+                result.append(item)
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error recuperando historial desde Firestore: {e}")
             return []
 
     def get_stats(self) -> Dict[str, Any]:
-        """Obtiene estadísticas básicas de uso."""
+        """Obtiene estadísticas básicas de uso de forma serverless."""
+        if self.db is None:
+            return {
+                "total_queries": 0,
+                "total_users": 0,
+                "avg_execution_time_ms": 0.0
+            }
+
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM query_history")
-                total_queries = cursor.fetchone()[0]
-                
-                cursor.execute("SELECT COUNT(DISTINCT user_email) FROM query_history")
-                total_users = cursor.fetchone()[0]
-                
-                cursor.execute("SELECT AVG(execution_time_ms) FROM query_history WHERE status = 'success'")
-                avg_time = cursor.fetchone()[0] or 0
-                
-                return {
-                    "total_queries": total_queries,
-                    "total_users": total_users,
-                    "avg_execution_time_ms": round(avg_time, 2)
-                }
-        except sqlite3.Error as e:
-            logger.error(f"Error obteniendo estadísticas: {e}")
-            return {}
+            collection_ref = self.db.collection(self.collection_name)
+            
+            # Obtener conteo total eficiente usando Firestore aggregation count()
+            count_query = collection_ref.count()
+            total_queries = count_query.get()[0][0].value
+            
+            # Para total_users, dado que Firestore no tiene group by / distinct nativo directo sin leer todos los docs,
+            # hacemos una aproximación o leemos un conjunto limitado de datos recientes para evitar un costo excesivo de lectura
+            # En producción real, es mejor pre-computar estadísticas. Haremos una lectura básica de los últimos 200 registros.
+            recent_docs = collection_ref.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(200).stream()
+            users = set()
+            total_time = 0
+            success_count = 0
+            
+            for doc in recent_docs:
+                data = doc.to_dict()
+                if data.get("user_email"):
+                    users.add(data["user_email"])
+                if data.get("status") == "success" and data.get("execution_time_ms"):
+                    total_time += data["execution_time_ms"]
+                    success_count += 1
+            
+            avg_time = (total_time / success_count) if success_count > 0 else 0
+            
+            return {
+                "total_queries": total_queries,
+                "total_users": len(users) if users else 0,
+                "avg_execution_time_ms": round(avg_time, 2)
+            }
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas de Firestore: {e}")
+            return {
+                "total_queries": 0,
+                "total_users": 0,
+                "avg_execution_time_ms": 0.0
+            }

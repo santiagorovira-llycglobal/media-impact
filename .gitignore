@@ -6,3 +6,23 @@ tests/
 tests/.env
 **/.env
 **/tests/.env
+
+# GCP Service Account Keys & Secrets
+*-keys.json
+media-impact-*.json
+*.json.key
+
+# Local SQLite databases
+*.db
+ga4_history.db
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Log files
+*.log
+backend.log
+frontend.log
+
