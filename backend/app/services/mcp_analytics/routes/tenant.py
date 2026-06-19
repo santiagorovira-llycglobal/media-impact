@@ -59,7 +59,7 @@ async def get_tenant_config(request: Request, tenant: Optional[str] = Query(None
         "llyc": {
             "tenant_id": "llyc",
             "tenant_name": "LLYC Intelligence",
-            "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/LLYC_logo.svg",
+            "logo_url": "/logo_llyc.svg",
             "primary_color": "#E51D24", # Rojo LLYC
             "secondary_color": "#1C2541", # Azul LLYC
             "font_family": "Montserrat, sans-serif",

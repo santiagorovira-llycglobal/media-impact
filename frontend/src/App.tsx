@@ -164,7 +164,7 @@ const App: React.FC = () => {
   const [tenant, setTenant] = useState<TenantConfig>({
     tenant_id: 'llyc',
     tenant_name: 'LLYC Intelligence',
-    logo_url: 'https://upload.wikimedia.org/wikipedia/commons/e/e5/LLYC_logo.svg',
+    logo_url: '/logo_llyc.svg',
     primary_color: '#F54963',
     secondary_color: '#36A7B7',
     font_family: 'Montserrat, sans-serif',
