@@ -42,6 +42,13 @@
         ]
       }
     ],
+    "redirects": [
+      {
+        "source": "/",
+        "destination": "/media-impact/",
+        "type": 302
+      }
+    ],
     "rewrites": [
       {
         "source": "/media-impact/api/v1/**",
