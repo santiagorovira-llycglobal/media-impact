@@ -196,14 +196,17 @@ class BrandlightService(AnalyticsService):
         Ejecuta consultas tabulares mapeando peticiones de métricas a los reportes de Visibilidad y SoV de Brandlight.
         """
         brand_name = self.tenant_id
-        if not brand_name or brand_name in ["default-brand", "test"]:
-            try:
-                brands = await self.list_accounts()
-                if brands:
-                    brand_name = brands[0].account_id
-                    logger.info(f"Brandlight: Marca descubierta automáticamente vía API Key: '{brand_name}'")
-            except Exception as e:
-                logger.warning(f"Error al descubrir marca de Brandlight automáticamente: {e}")
+        try:
+            brands = await self.list_accounts()
+            brand_ids = [b.account_id for b in brands]
+            if brand_name not in brand_ids and brands:
+                # Si el tenant_id no coincide con ninguna marca registrada, usar la primera disponible (ej. 'Sanitas Mayores')
+                brand_name = brands[0].account_id
+                logger.info(f"Brandlight: El tenant '{self.tenant_id}' no coincide con marcas registradas {brand_ids}. Usando '{brand_name}' automáticamente.")
+            else:
+                logger.info(f"Brandlight: Usando marca '{brand_name}'")
+        except Exception as e:
+            logger.warning(f"Error al verificar marca de Brandlight: {e}")
                 
         location = request.property_id.split("/")[-1] # ej: ES, MX
         

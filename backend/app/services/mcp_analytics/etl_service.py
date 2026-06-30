@@ -110,6 +110,29 @@ class MCPETLService:
                 
         return val
 
+    def _clean_date_format(self, date_val: str) -> str:
+        """
+        Limpia y estandariza cualquier formato de fecha a YYYY-MM-DD para BigQuery.
+        Ejemplos: 'Jun 23, 2026' -> '2026-06-23', '20260623' -> '2026-06-23'.
+        """
+        if not date_val:
+            return datetime.utcnow().strftime("%Y-%m-%d")
+        date_val = str(date_val).strip()
+        import re
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", date_val):
+            return date_val
+        try:
+            from dateutil import parser as date_parser
+            dt = date_parser.parse(date_val)
+            return dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        # Fallback manual para YYYYMMDD o formatos sin delimitadores
+        clean = re.sub(r"[^0-9]", "", date_val)
+        if len(clean) == 8:
+            return f"{clean[:4]}-{clean[4:6]}-{clean[6:]}"
+        return date_val
+
     async def run_full_sync(self, credentials: Dict[str, Any], date_from: str, date_to: str, on_progress: Optional[Callable[[str, str], Any]] = None) -> Dict[str, Any]:
         """
         Ejecuta un ciclo completo de sincronización de datos para el tenant de origen a fin
@@ -153,7 +176,7 @@ class MCPETLService:
                 for r in res.rows:
                     ga4_rows.append({
                         "tenant_id": self.tenant_id,
-                        "date": r.get("date"),
+                        "date": self._clean_date_format(r.get("date")),
                         "source": r.get("source"),
                         "medium": r.get("medium"),
                         "total_sessions": int(float(r.get("sessions", 0))),
@@ -230,14 +253,7 @@ class MCPETLService:
                         segment_rows = []
                         for r in res.rows:
                             raw_date = r.get("date")
-                            if raw_date:
-                                clean_date = raw_date.replace("-", "")
-                                if len(clean_date) == 8:
-                                    date_str = f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:]}"
-                                else:
-                                    date_str = raw_date
-                            else:
-                                date_str = datetime.utcnow().strftime("%Y-%m-%d")
+                            date_str = self._clean_date_format(raw_date)
                                 
                             segment_rows.append({
                                 "tenant_id": self.tenant_id,
@@ -294,7 +310,7 @@ class MCPETLService:
                 for r in res.rows:
                     peec_rows.append({
                         "tenant_id": self.tenant_id,
-                        "date": r.get("date"),
+                        "date": self._clean_date_format(r.get("date")),
                         "source": "ai-engines",
                         "medium": "organic-ai",
                         "total_sessions": 0,
@@ -343,7 +359,7 @@ class MCPETLService:
                 for r in res.rows:
                     visibility_rows.append({
                         "tenant_id": self.tenant_id,
-                        "date": r.get("date"),
+                        "date": self._clean_date_format(r.get("date")),
                         "domain": r.get("domain"),
                         "visibility_score": float(r.get("visibility_score", 0)),
                         "sentiment_score": float(r.get("sentiment_score", 0)),
