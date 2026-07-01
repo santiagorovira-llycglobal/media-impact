@@ -317,7 +317,6 @@ class BigQueryService:
                 FROM `{self.project_id}.{self.dataset_id}.fact_ai_visibility`
                 WHERE tenant_id = @tenant_id 
                   AND date BETWEEN @start_date AND @end_date
-                  {segment_filter}
             """
             
             params = [

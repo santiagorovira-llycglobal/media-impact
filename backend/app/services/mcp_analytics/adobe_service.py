@@ -45,6 +45,7 @@ class AdobeAnalyticsService(AnalyticsService):
             credentials.get("refresh_token") or 
             credentials.get("refreshToken")
         )
+        self.tenant_id = credentials.get("tenant_id")
         self.company_id = None
         if credentials.get("force_company_id") == "true" or credentials.get("forceCompanyId") == True:
             self.company_id = (
@@ -132,6 +133,8 @@ class AdobeAnalyticsService(AnalyticsService):
 
     async def _get_company_id(self) -> str:
         if self.client_id == "adobe-temp":
+            if self.tenant_id == "sanitas":
+                return "sanita2"
             return "company-test-1"
         if self.company_id: return self.company_id
         
@@ -144,6 +147,10 @@ class AdobeAnalyticsService(AnalyticsService):
 
     async def list_accounts(self) -> List[GAAccount]:
         if self.client_id == "adobe-temp":
+            if self.tenant_id == "sanitas":
+                return [
+                    GAAccount(name="companies/sanita2", display_name="Sanitas", account_id="sanita2")
+                ]
             return [
                 GAAccount(name="companies/company-test-1", display_name="LLYC España Compañía de Pruebas", account_id="company-test-1"),
                 GAAccount(name="companies/company-test-2", display_name="LLYC Latam Compañía Demo", account_id="company-test-2")
@@ -207,6 +214,10 @@ class AdobeAnalyticsService(AnalyticsService):
 
     async def list_properties(self, account_id: Optional[str] = None) -> List[GAProperty]:
         if self.client_id == "adobe-temp":
+            if self.tenant_id == "sanitas" or account_id == "sanita2":
+                return [
+                    GAProperty(name="vrs_sanita2_sanitasmayores", display_name="Sanitas Mayores Suite (vrs_sanita2_sanitasmayores)", property_id="vrs_sanita2_sanitasmayores", parent="accounts/sanita2")
+                ]
             return [
                 GAProperty(name="rs-llyc-es-corp", display_name="LLYC España Corporativo Suite (rs-llyc-es-corp)", property_id="rs-llyc-es-corp", parent="accounts/company-test-1"),
                 GAProperty(name="rs-llyc-mx-mkt", display_name="LLYC México Marketing Suite (rs-llyc-mx-mkt)", property_id="rs-llyc-mx-mkt", parent="accounts/company-test-1")
@@ -229,6 +240,13 @@ class AdobeAnalyticsService(AnalyticsService):
         Lists all available segments for a given report suite.
         """
         if self.client_id == "adobe-temp":
+            if self.tenant_id == "sanitas" or report_suite_id == "vrs_sanita2_sanitasmayores":
+                return [
+                    {"id": "s6582_694960ac62fb9877ebbada1f", "name": "Sanitas Seguros"},
+                    {"id": "s6582_69271f0350a78e73f6b47e5e", "name": "Sanitas Hospitales"},
+                    {"id": "s6582_69271ecb50a78e73f6b47e5c", "name": "Sanitas Dental"},
+                    {"id": "all-users", "name": "Todos los usuarios"}
+                ]
             return [
                 {"id": "seg-llyc-organic-seo", "name": "Búsqueda Orgánica SEO (Google/Bing)"},
                 {"id": "seg-llyc-ai-referred", "name": "Tráfico Referido por Motores IA (ChatGPT)"},

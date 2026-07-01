@@ -296,7 +296,9 @@ const App: React.FC = () => {
     if (!connId) return;
 
     try {
-      const res = await secureFetch(`/api/v1/mcp-analytics/accounts?connection_id=${connId}`);
+      const tId = tenant?.tenant_id || state.tenant_id || '';
+      const tenantQuery = tId ? `&tenant_id=${tId}` : '';
+      const res = await secureFetch(`/api/v1/mcp-analytics/accounts?connection_id=${connId}${tenantQuery}`);
       if (res.ok) {
         const data = await res.json();
         const loadedAccounts = data.accounts || [];
@@ -323,7 +325,9 @@ const App: React.FC = () => {
     if (!connId || !accId) return;
 
     try {
-      const res = await secureFetch(`/api/v1/mcp-analytics/properties?connection_id=${connId}&account_id=${accId}`);
+      const tId = tenant?.tenant_id || state.tenant_id || '';
+      const tenantQuery = tId ? `&tenant_id=${tId}` : '';
+      const res = await secureFetch(`/api/v1/mcp-analytics/properties?connection_id=${connId}&account_id=${accId}${tenantQuery}`);
       if (res.ok) {
         const data = await res.json();
         const loadedProperties = data.properties || [];
@@ -351,7 +355,9 @@ const App: React.FC = () => {
     if (!connId || !propId) return;
 
     try {
-      const res = await secureFetch(`/api/v1/mcp-analytics/adobe/segments/${propId}?connection_id=${connId}`);
+      const tId = tenant?.tenant_id || state.tenant_id || '';
+      const tenantQuery = tId ? `&tenant_id=${tId}` : '';
+      const res = await secureFetch(`/api/v1/mcp-analytics/adobe/segments/${propId}?connection_id=${connId}${tenantQuery}`);
       if (res.ok) {
         const data = await res.json();
         setSegments(data.segments || []);

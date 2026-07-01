@@ -59,6 +59,7 @@ class RunReportRequest(BaseModel):
     session_id: Optional[str] = None
     connection_id: Optional[str] = None
     segment_id: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 class RunReportResponse(BaseModel):

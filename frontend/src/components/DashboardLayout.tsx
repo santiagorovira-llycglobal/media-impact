@@ -191,17 +191,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         </>
       )}
 
-      {/* Segmentos de Adobe Analytics */}
-      {isAdobe && segments.length > 0 && (
+      {isAdobe ? (
         <>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-mid uppercase tracking-widest text-[#F54963]">Segmento</span>
+            <MapPin className="w-4 h-4 text-[#F54963]" />
+            <span className="text-[11px] font-bold text-mid uppercase tracking-widest text-[#F54963]">Mercado / Segmento</span>
             <select 
               value={state.segment_id || ''}
               onChange={e => updateState({ segment_id: e.target.value })}
-              className="bg-dashboard-bg border border-dashboard-border rounded px-2 py-1 text-xs outline-none focus:ring-1 ring-red/20 max-w-[180px] overflow-hidden text-ellipsis font-bold"
+              className="bg-dashboard-bg border border-dashboard-border rounded px-2 py-1 text-xs outline-none focus:ring-1 ring-red/20 max-w-[180px] overflow-hidden text-ellipsis font-bold text-[#F54963]"
             >
-              <option value="">Todos los usuarios</option>
+              <option value="">Todos los segmentos</option>
               {segments.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -209,24 +209,23 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               ))}
             </select>
           </div>
-          <div className="h-4 w-[1px] bg-dashboard-border"></div>
         </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-mid" />
+          <span className="text-[11px] font-bold text-mid uppercase tracking-widest">Mercado</span>
+          <select 
+            value={state.market}
+            onChange={e => updateState({ market: e.target.value })}
+            className="bg-dashboard-bg border border-dashboard-border rounded px-2 py-1 text-xs outline-none focus:ring-1 ring-red/20"
+          >
+            <option value="all">Todos los mercados</option>
+            <option value="es">España</option>
+            <option value="mx">México</option>
+            <option value="co">Colombia</option>
+          </select>
+        </div>
       )}
-      
-      <div className="flex items-center gap-2">
-        <MapPin className="w-4 h-4 text-mid" />
-        <span className="text-[11px] font-bold text-mid uppercase tracking-widest">Mercado</span>
-        <select 
-          value={state.market}
-          onChange={e => updateState({ market: e.target.value })}
-          className="bg-dashboard-bg border border-dashboard-border rounded px-2 py-1 text-xs outline-none focus:ring-1 ring-red/20"
-        >
-          <option value="all">Todos los mercados</option>
-          <option value="es">España</option>
-          <option value="mx">México</option>
-          <option value="co">Colombia</option>
-        </select>
-      </div>
       
       <div className="h-4 w-[1px] bg-dashboard-border"></div>
       

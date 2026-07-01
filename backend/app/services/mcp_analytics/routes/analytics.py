@@ -110,18 +110,19 @@ async def test_connection(
 async def list_accounts(
     session_id: Optional[str] = None, 
     connection_id: Optional[str] = None, 
+    tenant_id: Optional[str] = Query(None),
     user_email: str = Depends(get_current_user)
 ):
     """Lista las cuentas del proveedor configurado con reintento de refresh."""
     try:
-        service = get_analytics_service(session_id, connection_id, user_email)
+        service = get_analytics_service(session_id, connection_id, user_email, tenant_id=tenant_id)
         try:
             accounts = await service.list_accounts()
             return {"accounts": [acc.model_dump() for acc in accounts]}
         except Exception as e:
             if "401" in str(e) or "authentication" in str(e).lower() or "unauthenticated" in str(e).lower():
                 logger.info("401 detected in list_accounts, attempting forced token refresh...")
-                service = get_analytics_service(session_id, connection_id, user_email, force_refresh=True)
+                service = get_analytics_service(session_id, connection_id, user_email, force_refresh=True, tenant_id=tenant_id)
                 accounts = await service.list_accounts()
                 return {"accounts": [acc.model_dump() for acc in accounts]}
             raise e
@@ -134,6 +135,7 @@ async def list_properties(
     account_id: Optional[str] = None, 
     session_id: Optional[str] = None, 
     connection_id: Optional[str] = None, 
+    tenant_id: Optional[str] = Query(None),
     user_email: str = Depends(get_current_user)
 ):
     """Lista las propiedades del proveedor configurado con reintento de refresh."""
@@ -142,14 +144,14 @@ async def list_properties(
         if account_id:
             clean_account_id = account_id.split("/")[-1]
             
-        service = get_analytics_service(session_id, connection_id, user_email)
+        service = get_analytics_service(session_id, connection_id, user_email, tenant_id=tenant_id)
         try:
             properties = await service.list_properties(clean_account_id)
             return {"properties": [prop.model_dump() for prop in properties]}
         except Exception as e:
             if "401" in str(e) or "authentication" in str(e).lower() or "unauthenticated" in str(e).lower():
                 logger.info("401 detected in list_properties, attempting forced token refresh...")
-                service = get_analytics_service(session_id, connection_id, user_email, force_refresh=True)
+                service = get_analytics_service(session_id, connection_id, user_email, force_refresh=True, tenant_id=tenant_id)
                 properties = await service.list_properties(clean_account_id)
                 return {"properties": [prop.model_dump() for prop in properties]}
             raise e
@@ -161,12 +163,13 @@ async def list_properties(
 async def list_adobe_segments(
     property_id: str,
     connection_id: str,
+    tenant_id: Optional[str] = Query(None),
     user_email: str = Depends(get_current_user)
 ):
     """Lista los segmentos disponibles para un Report Suite de Adobe Analytics."""
     try:
         # We must use the analytics service factory to get an authenticated Adobe service
-        service = get_analytics_service(connection_id=connection_id, user_email=user_email)
+        service = get_analytics_service(connection_id=connection_id, user_email=user_email, tenant_id=tenant_id)
         
         # Check if the service is indeed an AdobeAnalyticsService
         if not isinstance(service, AdobeAnalyticsService):
@@ -218,7 +221,7 @@ async def run_report(
             if end_date.lower() == "today":
                 end_date = datetime.utcnow().strftime("%Y-%m-%d")
                 
-            metrics = bq.query_dashboard_metrics(t_id, start_date, end_date)
+            metrics = bq.query_dashboard_metrics(t_id, start_date, end_date, segment_id=request.segment_id)
             if metrics and metrics.get("has_data", False):
                 logger.info(f"Consumiendo datos reales desde Google BigQuery para el tenant '{t_id}'.")
                 

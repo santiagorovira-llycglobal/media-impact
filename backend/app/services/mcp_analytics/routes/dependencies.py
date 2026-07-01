@@ -108,7 +108,8 @@ def get_analytics_service(
     session_id: Optional[str] = None, 
     connection_id: Optional[str] = None, 
     user_email: Optional[str] = None, 
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    tenant_id: Optional[str] = None
 ) -> Any:
     """Factory to get the correct analytics service based on the session or connection."""
     
@@ -124,7 +125,8 @@ def get_analytics_service(
                 "client_id": "adobe-temp",
                 "client_secret": "adobe-temp",
                 "org_id": "adobe-temp",
-                "company_id": "adobe-temp"
+                "company_id": "adobe-temp",
+                "tenant_id": tenant_id
             })
         elif connection_id == "local":
             from app.services.mcp_analytics.ga_service import GAService
