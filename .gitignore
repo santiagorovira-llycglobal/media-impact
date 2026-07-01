@@ -26,3 +26,5 @@ env/
 backend.log
 frontend.log
 
+# Compiled static assets for Cloud Run backend
+backend/app/static/

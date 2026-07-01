@@ -1,6 +1,6 @@
 // frontend/src/components/AdminPanel.tsx
 import React, { useState } from 'react';
-import { ShieldCheck, Plus, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, LogOut, User } from 'lucide-react';
+import { ShieldCheck, Plus, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, LogOut, User, KeyRound, ExternalLink } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { auth } from '../firebase';
 import { secureFetch } from '../services/apiClient';
@@ -23,7 +23,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminEmailProp, onBack, 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Selector de pestañas
-  const [activeTab, setActiveTab] = useState<'tenants' | 'etl'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'etl' | 'oauth'>('tenants');
 
   // Control de Modales
   const [editingTenant, setEditingTenant] = useState<TenantConfig | null>(null);
@@ -225,6 +225,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminEmailProp, onBack, 
           >
             ❤️ Monitor de Salud ETL
           </button>
+          <button
+            onClick={() => setActiveTab('oauth')}
+            className={`pb-4 text-xs font-black uppercase tracking-widest border-b-2 transition-all ${
+              activeTab === 'oauth' 
+                ? 'border-red text-red font-black' 
+                : 'border-transparent text-mid hover:text-white'
+            }`}
+          >
+            🔑 Conectar OAuth (GA4)
+          </button>
         </div>
 
         {activeTab === 'tenants' ? (
@@ -237,12 +247,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminEmailProp, onBack, 
             openSecretModal={openSecretModal}
             openEditModal={openEditModal}
           />
-        ) : (
+        ) : activeTab === 'etl' ? (
           /* TAB 2: MONITOR DE SALUD ETL */
           <EtlMonitorTab 
             tenants={tenants}
             onRefreshTenants={fetchTenantsSilently}
           />
+        ) : (
+          /* TAB 3: CONECTAR OAUTH (GA4) */
+          <div className="bg-[#0c1e30] border border-white/10 rounded-2xl p-8 max-w-2xl mx-auto text-center space-y-6 shadow-xl">
+            <div className="w-16 h-16 bg-red/10 border border-red/20 rounded-full flex items-center justify-center mx-auto text-red animate-pulse">
+              <KeyRound className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-lg font-black tracking-tight uppercase">Consentimiento Seguro Google Analytics 4 (GA4)</h2>
+              <p className="text-xs text-mid leading-relaxed max-w-md mx-auto">
+                Conecta de forma segura las propiedades de Google Analytics 4 de LLYC utilizando el protocolo corporativo oficial de Google (OAuth 2.0). 
+                Esto permite importar de manera automática las audiencias, métricas de engagement y la atribución de tráfico de motores de IA directamente al Data Lake unificado de LLYC.
+              </p>
+            </div>
+            <div className="pt-4 border-t border-white/5 space-y-4">
+              <button
+                onClick={() => {
+                  const url = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                    ? 'http://localhost:8080/api/v1/mcp-analytics/oauth/login'
+                    : '/media-impact/api/v1/mcp-analytics/oauth/login';
+                  window.location.href = url;
+                }}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-red text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-red/90 transition-colors shadow-lg shadow-red/25"
+              >
+                Conectar Google Analytics 4 <ExternalLink className="w-4 h-4" />
+              </button>
+              <p className="text-[10px] text-mid/80">
+                Las credenciales temporales se almacenan y renuevan de forma encriptada bajo estándares bancarios mediante tokens de acceso OAuth2 de Google.
+              </p>
+            </div>
+          </div>
         )}
       </main>
 
